@@ -23,3 +23,15 @@ export const registerRateLimiter = rateLimit({
       'Too many registration attempts. Please try again later.',
   },
 })
+
+/** Generous cap for the sync endpoints — a healthy client polls every 45s. */
+export const syncRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Syncing too frequently. Slow down.',
+  },
+})

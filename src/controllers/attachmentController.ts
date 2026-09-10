@@ -1,5 +1,3 @@
-import fs from 'fs'
-import path from 'path'
 import { NextFunction, Response } from 'express'
 import mongoose from 'mongoose'
 import Attachment, {
@@ -11,7 +9,12 @@ import ElectricityRecord from '../models/ElectricityRecord.js'
 import ShoppingItem from '../models/ShoppingItem.js'
 import Transaction from '../models/Transaction.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
-import { UPLOAD_DIR } from '../middleware/upload.js'
+import {
+  deleteReceipt,
+  isStorageConfigured,
+  receiptUrl,
+  uploadReceipt,
+} from '../services/attachmentStorage.js'
 
 const serialize = (a: IAttachment) => ({
   id: String(a._id),
@@ -23,6 +26,11 @@ const serialize = (a: IAttachment) => ({
   createdBy: String(a.createdBy),
   createdAt: a.createdAt,
 })
+
+const objectId = (value: string | string[]) => {
+  const id = String(value)
+  return mongoose.Types.ObjectId.isValid(id) ? id : null
+}
 
 /** Confirms the entity an attachment targets exists in this space. */
 const entityExistsInSpace = async (
@@ -49,16 +57,10 @@ const entityExistsInSpace = async (
   }
 }
 
-const removeFileQuietly = (storageKey: string) => {
-  fs.promises
-    .unlink(path.join(UPLOAD_DIR, storageKey))
-    .catch(() => undefined)
-}
-
 /**
  * POST /api/spaces/:spaceId/attachments  (multipart: file, entityType, entityId)
- * The uploaded file is already on disk under a generated name; here we validate
- * the target and persist the metadata.
+ * The file is held in memory, validated against its target, uploaded to
+ * Cloudinary as an authenticated asset, and only its metadata is persisted.
  */
 export const uploadAttachment = async (
   req: SpaceRequest,
@@ -66,6 +68,13 @@ export const uploadAttachment = async (
   next: NextFunction,
 ) => {
   try {
+    if (!isStorageConfigured()) {
+      return res.status(503).json({
+        success: false,
+        message: 'Attachment storage is not configured on the server',
+      })
+    }
+
     const file = req.file
     if (!file) {
       return res
@@ -89,12 +98,13 @@ export const uploadAttachment = async (
       !allowed.includes(entityType) ||
       !(await entityExistsInSpace(req.space!._id, entityType, entityId))
     ) {
-      removeFileQuietly(file.filename)
       return res.status(422).json({
         success: false,
         message: 'That record does not exist in this space',
       })
     }
+
+    const stored = await uploadReceipt(file.buffer, file.mimetype)
 
     const attachment = await Attachment.create({
       spaceId: req.space!._id,
@@ -102,8 +112,9 @@ export const uploadAttachment = async (
       entityId,
       fileName: file.originalname.slice(0, 260),
       mimeType: file.mimetype,
-      size: file.size,
-      storageKey: file.filename,
+      size: stored.bytes || file.size,
+      storageKey: stored.storageKey,
+      resourceType: stored.resourceType,
       createdBy: req.user!.id,
     })
 
@@ -113,7 +124,6 @@ export const uploadAttachment = async (
       attachment: serialize(attachment),
     })
   } catch (error) {
-    if (req.file) removeFileQuietly(req.file.filename)
     next(error)
   }
 }
@@ -152,7 +162,11 @@ export const listAttachments = async (
   }
 }
 
-/** GET /api/spaces/:spaceId/attachments/:attachmentId/file — access-controlled download. */
+/**
+ * GET /api/spaces/:spaceId/attachments/:attachmentId/file
+ * Redirects to a freshly signed Cloudinary URL — access is gated here by space
+ * membership, and the signed URL is what actually authorizes the fetch.
+ */
 export const downloadAttachment = async (
   req: SpaceRequest,
   res: Response,
@@ -160,9 +174,7 @@ export const downloadAttachment = async (
 ) => {
   try {
     const attachment = await Attachment.findOne({
-      _id: mongoose.Types.ObjectId.isValid(String(req.params.attachmentId))
-        ? String(req.params.attachmentId)
-        : null,
+      _id: objectId(req.params.attachmentId),
       spaceId: req.space!._id,
       deletedAt: null,
     })
@@ -173,20 +185,9 @@ export const downloadAttachment = async (
         .json({ success: false, message: 'Attachment not found' })
     }
 
-    const filePath = path.join(UPLOAD_DIR, attachment.storageKey)
-    if (!fs.existsSync(filePath)) {
-      return res
-        .status(404)
-        .json({ success: false, message: 'File is missing on the server' })
-    }
-
-    res.setHeader('Content-Type', attachment.mimeType)
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${encodeURIComponent(attachment.fileName)}"`,
+    return res.redirect(
+      receiptUrl(attachment.storageKey, attachment.resourceType),
     )
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    fs.createReadStream(filePath).pipe(res)
   } catch (error) {
     next(error)
   }
@@ -200,9 +201,7 @@ export const deleteAttachment = async (
 ) => {
   try {
     const attachment = await Attachment.findOne({
-      _id: mongoose.Types.ObjectId.isValid(String(req.params.attachmentId))
-        ? String(req.params.attachmentId)
-        : null,
+      _id: objectId(req.params.attachmentId),
       spaceId: req.space!._id,
       deletedAt: null,
     })
@@ -215,7 +214,7 @@ export const deleteAttachment = async (
 
     attachment.deletedAt = new Date()
     await attachment.save()
-    removeFileQuietly(attachment.storageKey)
+    await deleteReceipt(attachment.storageKey, attachment.resourceType)
 
     return res.json({ success: true, message: 'Attachment removed' })
   } catch (error) {

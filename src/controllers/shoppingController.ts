@@ -10,6 +10,8 @@ import {
   recordPurchasePrice,
   resolveItemProfile,
 } from '../services/itemIntelligenceService.js'
+import { categoryNameById } from '../services/categoryService.js'
+import { visibilityFilter } from '../services/visibility.js'
 import {
   addItemSchema,
   createListSchema,
@@ -25,6 +27,7 @@ const serializeList = (list: IShoppingList) => ({
   plannedBudgetMinor: list.plannedBudgetMinor ?? null,
   plannedAt: list.plannedAt ?? null,
   completedAt: list.completedAt ?? null,
+  visibility: list.visibility,
   createdBy: String(list.createdBy),
   createdAt: list.createdAt,
   updatedAt: list.updatedAt,
@@ -49,10 +52,17 @@ const serializeItem = (item: IShoppingItem) => ({
 const loadList = async (
   spaceId: mongoose.Types.ObjectId,
   listIdParam: string | string[],
+  userId: string,
 ) => {
   const listId = String(listIdParam)
   if (!mongoose.Types.ObjectId.isValid(listId)) return null
-  return ShoppingList.findOne({ _id: listId, spaceId, deletedAt: null })
+  const query: Record<string, unknown> = {
+    _id: listId,
+    spaceId,
+    deletedAt: null,
+    ...visibilityFilter(userId),
+  }
+  return ShoppingList.findOne(query)
 }
 
 const loadItems = (listId: mongoose.Types.ObjectId | string) =>
@@ -70,6 +80,7 @@ export const listShoppingLists = async (
     const filter: Record<string, unknown> = {
       spaceId: req.space!._id,
       deletedAt: null,
+      ...visibilityFilter(req.user!.id),
     }
     if (typeof req.query.status === 'string') {
       filter.status = req.query.status
@@ -127,6 +138,7 @@ export const createShoppingList = async (
         ? new Date(result.data.plannedAt)
         : null,
       status: 'ACTIVE',
+      visibility: result.data.visibility ?? 'SPACE',
       createdBy: req.user!.id,
     })
 
@@ -148,7 +160,7 @@ export const getShoppingList = async (
   next: NextFunction,
 ) => {
   try {
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -186,7 +198,7 @@ export const updateShoppingList = async (
       })
     }
 
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -204,6 +216,12 @@ export const updateShoppingList = async (
       list.plannedBudgetMinor = result.data.plannedBudgetMinor
     }
     if (result.data.status !== undefined) list.status = result.data.status
+    if (
+      result.data.visibility !== undefined &&
+      String(list.createdBy) === req.user!.id
+    ) {
+      list.visibility = result.data.visibility
+    }
 
     await list.save()
     const items = await loadItems(list._id)
@@ -229,7 +247,7 @@ export const deleteShoppingList = async (
   next: NextFunction,
 ) => {
   try {
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -266,7 +284,7 @@ export const completeShoppingList = async (
 ) => {
   try {
     const spaceId = req.space!._id
-    const list = await loadList(spaceId, req.params.listId)
+    const list = await loadList(spaceId, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -327,6 +345,7 @@ export const completeShoppingList = async (
 
       // Learn the item: profile + category snapshot + price history (§9, §10).
       const profile = await resolveItemProfile(spaceId, item.name)
+      const categoryName = await categoryNameById(profile.categoryId)
 
       const txn = await Transaction.create({
         spaceId,
@@ -334,7 +353,8 @@ export const completeShoppingList = async (
         amountMinor: item.actualPriceMinor,
         currency: account.currency,
         title: item.name,
-        categoryName: profile.category ?? null,
+        categoryId: profile.categoryId ?? null,
+        categoryName,
         accountId: account._id,
         occurredAt: purchasedAt,
         sourceType: 'SHOPPING_ITEM',
@@ -401,7 +421,7 @@ export const addShoppingItem = async (
       })
     }
 
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -450,7 +470,7 @@ export const updateShoppingItem = async (
       })
     }
 
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)
@@ -505,7 +525,7 @@ export const deleteShoppingItem = async (
   next: NextFunction,
 ) => {
   try {
-    const list = await loadList(req.space!._id, req.params.listId)
+    const list = await loadList(req.space!._id, req.params.listId, req.user!.id)
     if (!list) {
       return res
         .status(404)

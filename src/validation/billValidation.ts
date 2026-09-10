@@ -11,6 +11,7 @@ export const createBillSchema = z.object({
   categoryName: z.string().trim().max(60).nullable().optional(),
   paymentAccountId: z.string().trim().min(1).nullable().optional(),
   tracksElectricity: z.boolean().optional(),
+  visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
 })
 
 export const updateBillSchema = z.object({
@@ -23,6 +24,7 @@ export const updateBillSchema = z.object({
   paymentAccountId: z.string().trim().min(1).nullable().optional(),
   active: z.boolean().optional(),
   tracksElectricity: z.boolean().optional(),
+  visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
 })
 
 const nonNegInt = z.number().int().min(0)

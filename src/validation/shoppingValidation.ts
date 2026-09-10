@@ -6,12 +6,14 @@ export const createListSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(120),
   plannedBudgetMinor: priceMinor.nullable().optional(),
   plannedAt: z.string().datetime().nullable().optional(),
+  visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
 })
 
 export const updateListSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   plannedBudgetMinor: priceMinor.nullable().optional(),
   status: z.enum(['ACTIVE', 'CANCELLED']).optional(),
+  visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
 })
 
 export const addItemSchema = z.object({

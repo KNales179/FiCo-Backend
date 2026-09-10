@@ -8,6 +8,9 @@ export type TransactionSourceType =
   | 'SHOPPING_LIST'
   | 'BILL_PAYMENT'
 
+/** SPACE = visible to every member; PRIVATE = only the creator (Product Spec §22). */
+export type RecordVisibility = 'SPACE' | 'PRIVATE'
+
 export interface ITransaction extends Document {
   spaceId: mongoose.Types.ObjectId
   type: TransactionType
@@ -23,6 +26,7 @@ export interface ITransaction extends Document {
   occurredAt: Date
   sourceType: TransactionSourceType
   sourceId?: string | null
+  visibility: RecordVisibility
   createdBy: mongoose.Types.ObjectId
   deletedAt?: Date | null
   createdAt: Date
@@ -119,6 +123,13 @@ const transactionSchema = new Schema<ITransaction>(
     sourceId: {
       type: String,
       default: null,
+    },
+
+    visibility: {
+      type: String,
+      enum: ['SPACE', 'PRIVATE'],
+      default: 'SPACE',
+      index: true,
     },
 
     createdBy: {

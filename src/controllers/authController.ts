@@ -4,6 +4,7 @@ import Session from '../models/Session.js'
 import Membership from '../models/Membership.js'
 import Space from '../models/Space.js'
 import {
+  getDummyHash,
   hashPassword,
   verifyPassword,
 } from '../utils/password.js'
@@ -19,6 +20,7 @@ import {
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
+import { consumePendingInvitations } from './spaceController.js'
 
 const SESSION_DURATION_DAYS =
   Number(process.env.SESSION_DURATION_DAYS) || 7
@@ -100,6 +102,7 @@ export const register = async (
     })
 
     await createPersonalSpace(user.id)
+    await consumePendingInvitations(user.id, normalizedEmail)
 
     const { expiresAt } = await createSession(user.id, res, deviceId)
 
@@ -145,26 +148,14 @@ export const login = async (
       ],
     })
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-      })
-    }
-
-    if (user.status !== 'ACTIVE') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-      })
-    }
-
+    // Always run a verify — against a dummy hash when there's no user — so the
+    // response time doesn't reveal whether an account exists.
     const passwordValid = await verifyPassword(
       password,
-      user.passwordHash,
+      user?.passwordHash ?? (await getDummyHash()),
     )
 
-    if (!passwordValid) {
+    if (!user || user.status !== 'ACTIVE' || !passwordValid) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',

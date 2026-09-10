@@ -1,10 +1,14 @@
 import { Response, NextFunction } from 'express'
 import mongoose from 'mongoose'
+import { z } from 'zod'
+import Invitation from '../models/Invitation.js'
 import Membership from '../models/Membership.js'
 import Space, { ISpace } from '../models/Space.js'
 import User from '../models/User.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
+import { seedDefaultCategories } from '../services/categoryService.js'
+import { logAction } from '../services/actionLogService.js'
 import {
   addMemberSchema,
   createSpaceSchema,
@@ -96,6 +100,11 @@ export const createSpace = async (
       role: 'OWNER',
       status: 'ACTIVE',
     })
+
+    await seedDefaultCategories(
+      space._id as mongoose.Types.ObjectId,
+      userId,
+    )
 
     return res.status(201).json({
       success: true,
@@ -202,6 +211,15 @@ export const leaveSpace = async (
 
     membership.status = 'REVOKED'
     await membership.save()
+
+    await logAction({
+      spaceId: space._id,
+      actorId: req.user!.id,
+      action: 'MEMBER_REMOVE',
+      entityType: 'membership',
+      entityId: req.user!.id,
+      summary: `${req.user!.username} left the space`,
+    })
 
     return res.json({ success: true, message: 'You left the space' })
   } catch (error) {
@@ -320,6 +338,15 @@ export const addMember = async (
       })
     }
 
+    await logAction({
+      spaceId: space._id,
+      actorId: req.user!.id,
+      action: 'MEMBER_ADD',
+      entityType: 'membership',
+      entityId: String(user._id),
+      summary: `added ${user.username} as ${role.toLowerCase()}`,
+    })
+
     return res.status(201).json({
       success: true,
       message: 'Member added',
@@ -380,8 +407,20 @@ export const updateMemberRole = async (
       })
     }
 
+    const oldRole = membership.role
     membership.role = result.data.role
     await membership.save()
+
+    await logAction({
+      spaceId: req.space!._id,
+      actorId: req.user!.id,
+      action: 'ROLE_CHANGE',
+      entityType: 'membership',
+      entityId: userId,
+      summary: `changed a member's role from ${oldRole.toLowerCase()} to ${result.data.role.toLowerCase()}`,
+      oldValue: oldRole,
+      newValue: result.data.role,
+    })
 
     return res.json({
       success: true,
@@ -390,6 +429,239 @@ export const updateMemberRole = async (
     })
   } catch (error) {
     next(error)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Invitations (for people who don't have a Fico account yet)
+// ---------------------------------------------------------------------------
+
+const inviteSchema = z.object({
+  email: z.string().trim().email().max(100),
+  role: z.enum(['EDITOR', 'VIEWER']).default('VIEWER'),
+})
+
+const serializeInvitation = (inv: {
+  _id: unknown
+  email: string
+  role: string
+  status: string
+  expiresAt: Date
+  createdAt: Date
+}) => ({
+  id: String(inv._id),
+  email: inv.email,
+  role: inv.role,
+  status: inv.status,
+  expiresAt: inv.expiresAt,
+  createdAt: inv.createdAt,
+})
+
+/** GET /api/spaces/:spaceId/invitations — pending invites (owner). */
+export const listInvitations = async (
+  req: SpaceRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const invitations = await Invitation.find({
+      spaceId: req.space!._id,
+      status: 'PENDING',
+    }).sort({ createdAt: -1 })
+
+    return res.json({
+      success: true,
+      invitations: invitations.map(serializeInvitation),
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** POST /api/spaces/:spaceId/invitations — invite by email (owner, FAMILY only). */
+export const createInvitation = async (
+  req: SpaceRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = inviteSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email is required',
+      })
+    }
+
+    const space = req.space!
+    if (space.type === 'PERSONAL') {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot invite people to a personal space',
+      })
+    }
+
+    const email = result.data.email.toLowerCase()
+
+    // Already a Fico user? Add them directly.
+    const user = await User.findOne({ email, status: 'ACTIVE' })
+    if (user) {
+      if (String(user._id) === req.user!.id) {
+        return res.status(400).json({
+          success: false,
+          message: 'You are already in this space',
+        })
+      }
+      const existing = await Membership.findOne({
+        spaceId: space._id,
+        userId: user._id,
+      })
+      if (existing && existing.status === 'ACTIVE') {
+        return res.status(409).json({
+          success: false,
+          message: 'That person is already a member',
+        })
+      }
+      if (existing) {
+        existing.status = 'ACTIVE'
+        existing.role = result.data.role
+        await existing.save()
+      } else {
+        await Membership.create({
+          spaceId: space._id,
+          userId: user._id,
+          role: result.data.role,
+          status: 'ACTIVE',
+        })
+      }
+      await logAction({
+        spaceId: space._id,
+        actorId: req.user!.id,
+        action: 'MEMBER_ADD',
+        entityType: 'membership',
+        entityId: String(user._id),
+        summary: `added ${user.username} as ${result.data.role.toLowerCase()}`,
+      })
+      return res.status(201).json({
+        success: true,
+        message: 'Member added',
+        addedExistingUser: true,
+      })
+    }
+
+    // Otherwise leave a pending invitation they redeem on sign-up.
+    const pending = await Invitation.findOne({
+      spaceId: space._id,
+      email,
+      status: 'PENDING',
+    })
+    if (pending) {
+      pending.role = result.data.role
+      await pending.save()
+    } else {
+      await Invitation.create({
+        spaceId: space._id,
+        email,
+        role: result.data.role,
+        invitedBy: req.user!.id,
+      })
+    }
+
+    await logAction({
+      spaceId: space._id,
+      actorId: req.user!.id,
+      action: 'INVITE',
+      entityType: 'invitation',
+      entityId: email,
+      summary: `invited ${email} as ${result.data.role.toLowerCase()}`,
+    })
+
+    return res.status(201).json({
+      success: true,
+      message: `Invitation sent to ${email}. They'll join when they sign up.`,
+      addedExistingUser: false,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** DELETE /api/spaces/:spaceId/invitations/:invitationId — revoke (owner). */
+export const revokeInvitation = async (
+  req: SpaceRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const id = String(req.params.invitationId)
+    const invitation = await Invitation.findOne({
+      _id: mongoose.Types.ObjectId.isValid(id) ? id : null,
+      spaceId: req.space!._id,
+      status: 'PENDING',
+    })
+    if (!invitation) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Invitation not found' })
+    }
+    invitation.status = 'REVOKED'
+    await invitation.save()
+    return res.json({ success: true, message: 'Invitation revoked' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Turn any pending invitations for `email` into active memberships. Called on
+ * registration so an invited person lands straight in the shared space.
+ */
+export const consumePendingInvitations = async (
+  userId: mongoose.Types.ObjectId | string,
+  email: string,
+): Promise<void> => {
+  const pending = await Invitation.find({
+    email: email.toLowerCase(),
+    status: 'PENDING',
+    expiresAt: { $gt: new Date() },
+  })
+
+  for (const invitation of pending) {
+    const space = await Space.findOne({
+      _id: invitation.spaceId,
+      deletedAt: null,
+    })
+    if (!space) {
+      invitation.status = 'REVOKED'
+      await invitation.save()
+      continue
+    }
+
+    await Membership.updateOne(
+      { spaceId: invitation.spaceId, userId },
+      {
+        $setOnInsert: {
+          spaceId: invitation.spaceId,
+          userId,
+          role: invitation.role,
+          status: 'ACTIVE',
+        },
+      },
+      { upsert: true },
+    )
+
+    invitation.status = 'ACCEPTED'
+    invitation.acceptedBy = new mongoose.Types.ObjectId(String(userId))
+    await invitation.save()
+
+    await logAction({
+      spaceId: invitation.spaceId,
+      actorId: userId,
+      action: 'MEMBER_ADD',
+      entityType: 'membership',
+      entityId: String(userId),
+      summary: `${email} joined the space via an invitation`,
+    })
   }
 }
 
@@ -431,6 +703,15 @@ export const removeMember = async (
 
     membership.status = 'REVOKED'
     await membership.save()
+
+    await logAction({
+      spaceId: req.space!._id,
+      actorId: req.user!.id,
+      action: 'MEMBER_REMOVE',
+      entityType: 'membership',
+      entityId: userId,
+      summary: 'removed a member from the space',
+    })
 
     return res.json({ success: true, message: 'Member removed' })
   } catch (error) {

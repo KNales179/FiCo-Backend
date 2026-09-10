@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import ItemProfile, { IItemProfile } from '../models/ItemProfile.js'
 import PriceHistory from '../models/PriceHistory.js'
+import { categoryNameById } from './categoryService.js'
 
 /** Lowercase, trim, collapse internal whitespace. Stable matching key. */
 export const normalizeItemName = (name: string): string =>
@@ -23,7 +24,6 @@ export const resolveItemProfile = async (
       displayName: name.trim(),
     })
   } catch {
-    // Lost a race — the unique index rejected the duplicate; re-read.
     return (await ItemProfile.findOne({ spaceId, normalizedName }))!
   }
 }
@@ -31,6 +31,7 @@ export const resolveItemProfile = async (
 export interface ItemSuggestion {
   itemProfileId: string
   displayName: string
+  categoryId: string | null
   category: string | null
   lastPriceMinor: number | null
   lastPurchasedAt: Date | null
@@ -46,17 +47,19 @@ export const suggestForName = async (
   const profile = await ItemProfile.findOne({ spaceId, normalizedName })
   if (!profile) return null
 
-  const [latest, count] = await Promise.all([
+  const [latest, count, category] = await Promise.all([
     PriceHistory.findOne({ itemProfileId: profile._id }).sort({
       purchasedAt: -1,
     }),
     PriceHistory.countDocuments({ itemProfileId: profile._id }),
+    categoryNameById(profile.categoryId),
   ])
 
   return {
     itemProfileId: String(profile._id),
     displayName: profile.displayName,
-    category: profile.category ?? null,
+    categoryId: profile.categoryId ? String(profile.categoryId) : null,
+    category,
     lastPriceMinor: latest?.amountMinor ?? null,
     lastPurchasedAt: latest?.purchasedAt ?? null,
     priceCount: count,

@@ -6,8 +6,8 @@ export interface IItemProfile extends Document {
   normalizedName: string
   /** The name as the user first typed it, for display. */
   displayName: string
-  /** Free-text category ("Food", "Transport"). Applied to future purchases only. */
-  category?: string | null
+  /** Chosen category. Applied to future purchases only (Product Spec §10). */
+  categoryId?: mongoose.Types.ObjectId | null
   createdAt: Date
   updatedAt: Date
 }
@@ -22,7 +22,11 @@ const itemProfileSchema = new Schema<IItemProfile>(
     },
     normalizedName: { type: String, required: true },
     displayName: { type: String, required: true, trim: true, maxlength: 120 },
-    category: { type: String, trim: true, maxlength: 60, default: null },
+    categoryId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category',
+      default: null,
+    },
   },
   { timestamps: true },
 )

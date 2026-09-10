@@ -3,7 +3,9 @@ import mongoose from 'mongoose'
 import Account from '../models/Account.js'
 import Transaction, { ITransaction } from '../models/Transaction.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
+import { categoryNameById } from '../services/categoryService.js'
 import { suggestForName } from '../services/itemIntelligenceService.js'
+import { visibilityFilter } from '../services/visibility.js'
 import {
   createTransactionSchema,
   updateTransactionSchema,
@@ -26,6 +28,7 @@ const serializeTransaction = (txn: ITransaction) => ({
   occurredAt: txn.occurredAt,
   sourceType: txn.sourceType,
   sourceId: txn.sourceId ?? null,
+  visibility: txn.visibility,
   createdBy: String(txn.createdBy),
   createdAt: txn.createdAt,
   updatedAt: txn.updatedAt,
@@ -129,17 +132,21 @@ export const listTransactions = async (
         ? new Date(req.query.before)
         : null
 
+    const and: Record<string, unknown>[] = [
+      visibilityFilter(req.user!.id),
+    ]
+    if (accountId) {
+      and.push({
+        $or: [{ accountId }, { destinationAccountId: accountId }],
+      })
+    }
+
     const filter: Record<string, unknown> = {
       spaceId,
       deletedAt: null,
+      $and: and,
     }
     if (type) filter.type = type
-    if (accountId) {
-      filter.$or = [
-        { accountId },
-        { destinationAccountId: accountId },
-      ]
-    }
     if (before) filter.occurredAt = { $lt: before }
 
     const transactions = await Transaction.find(filter)
@@ -187,10 +194,14 @@ export const createTransaction = async (
         .json({ success: false, message: resolved.error })
     }
 
-    // Auto-category from a known item with the same name (Product Spec §10, §38).
-    let categoryName: string | null = null
-    if (data.type === 'EXPENSE') {
+    // Category: an explicit pick wins; otherwise auto-fill from a known item
+    // with the same name (Product Spec §10, §38). Snapshot the name so history
+    // never changes when a category is renamed.
+    let categoryId: string | null = data.categoryId ?? null
+    let categoryName: string | null = await categoryNameById(categoryId)
+    if (!categoryName && data.type === 'EXPENSE') {
       const suggestion = await suggestForName(spaceId, data.title)
+      categoryId = suggestion?.categoryId ?? null
       categoryName = suggestion?.category ?? null
     }
 
@@ -201,6 +212,7 @@ export const createTransaction = async (
       currency: resolved.currency,
       title: data.title,
       details: data.details,
+      categoryId,
       categoryName,
       accountId: data.accountId,
       destinationAccountId:
@@ -209,6 +221,7 @@ export const createTransaction = async (
         ? new Date(data.occurredAt)
         : new Date(),
       sourceType: 'MANUAL',
+      visibility: data.visibility ?? 'SPACE',
       createdBy: req.user!.id,
     })
 
@@ -229,11 +242,13 @@ export const getTransaction = async (
   next: NextFunction,
 ) => {
   try {
-    const txn = await Transaction.findOne({
+    const getQuery: Record<string, unknown> = {
       _id: req.params.transactionId,
       spaceId: req.space!._id,
       deletedAt: null,
-    }).catch(() => null)
+      ...visibilityFilter(req.user!.id),
+    }
+    const txn = await Transaction.findOne(getQuery).catch(() => null)
 
     if (!txn) {
       return res
@@ -268,11 +283,13 @@ export const updateTransaction = async (
 
     const spaceId = req.space!._id
 
-    const txn = await Transaction.findOne({
+    const updateQuery: Record<string, unknown> = {
       _id: req.params.transactionId,
       spaceId,
       deletedAt: null,
-    }).catch(() => null)
+      ...visibilityFilter(req.user!.id),
+    }
+    const txn = await Transaction.findOne(updateQuery).catch(() => null)
 
     if (!txn) {
       return res
@@ -281,6 +298,21 @@ export const updateTransaction = async (
     }
 
     const data = result.data
+
+    // Only the creator may change a record's privacy.
+    if (
+      data.visibility !== undefined &&
+      String(txn.createdBy) === req.user!.id
+    ) {
+      txn.visibility = data.visibility
+    }
+    if (data.categoryId !== undefined) {
+      txn.categoryId = data.categoryId
+        ? new mongoose.Types.ObjectId(data.categoryId)
+        : null
+      txn.categoryName = await categoryNameById(data.categoryId)
+    }
+
     const nextAccountId = data.accountId ?? String(txn.accountId)
     const nextDestinationId =
       data.destinationAccountId ??
@@ -347,11 +379,13 @@ export const deleteTransaction = async (
   next: NextFunction,
 ) => {
   try {
-    const txn = await Transaction.findOne({
+    const deleteQuery: Record<string, unknown> = {
       _id: req.params.transactionId,
       spaceId: req.space!._id,
       deletedAt: null,
-    }).catch(() => null)
+      ...visibilityFilter(req.user!.id),
+    }
+    const txn = await Transaction.findOne(deleteQuery).catch(() => null)
 
     if (!txn) {
       return res

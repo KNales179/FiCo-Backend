@@ -10,6 +10,7 @@ export interface IShoppingList extends Document {
   plannedBudgetMinor?: number | null
   plannedAt?: Date | null
   completedAt?: Date | null
+  visibility: 'SPACE' | 'PRIVATE'
   createdBy: mongoose.Types.ObjectId
   deletedAt?: Date | null
   createdAt: Date
@@ -46,6 +47,11 @@ const shoppingListSchema = new Schema<IShoppingList>(
     },
     plannedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
+    visibility: {
+      type: String,
+      enum: ['SPACE', 'PRIVATE'],
+      default: 'SPACE',
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

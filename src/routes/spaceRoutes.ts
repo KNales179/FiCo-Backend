@@ -12,15 +12,22 @@ import {
 } from './electricityRoutes.js'
 import attachmentRoutes from './attachmentRoutes.js'
 import reconciliationRoutes from './reconciliationRoutes.js'
+import categoryRoutes from './categoryRoutes.js'
+import analyticsRoutes from './analyticsRoutes.js'
+import actionLogRoutes from './actionLogRoutes.js'
+import syncRoutes from './syncRoutes.js'
 import {
   addMember,
+  createInvitation,
   createSpace,
   deleteSpace,
   getSpace,
   leaveSpace,
+  listInvitations,
   listMembers,
   listMySpaces,
   removeMember,
+  revokeInvitation,
   updateMemberRole,
   updateSpace,
 } from '../controllers/spaceController.js'
@@ -63,6 +70,22 @@ router.delete(
   removeMember,
 )
 
+router.get(
+  '/:spaceId/invitations',
+  requireSpaceMember('OWNER'),
+  listInvitations,
+)
+router.post(
+  '/:spaceId/invitations',
+  requireSpaceMember('OWNER'),
+  createInvitation,
+)
+router.delete(
+  '/:spaceId/invitations/:invitationId',
+  requireSpaceMember('OWNER'),
+  revokeInvitation,
+)
+
 router.use('/:spaceId/accounts', accountRoutes)
 router.use('/:spaceId/transactions', transactionRoutes)
 router.use('/:spaceId/shopping-lists', shoppingRoutes)
@@ -72,5 +95,9 @@ router.use('/:spaceId/electricity', electricityRouter)
 router.use('/:spaceId/bill-payments', billPaymentRouter)
 router.use('/:spaceId/attachments', attachmentRoutes)
 router.use('/:spaceId/reconciliations', reconciliationRoutes)
+router.use('/:spaceId/categories', categoryRoutes)
+router.use('/:spaceId/analytics', analyticsRoutes)
+router.use('/:spaceId/action-logs', actionLogRoutes)
+router.use('/:spaceId/sync', syncRoutes)
 
 export default router

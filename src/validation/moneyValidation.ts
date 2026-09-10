@@ -39,9 +39,11 @@ export const createTransactionSchema = z
     currency: currency.optional(),
     title: z.string().trim().min(1, 'Title is required').max(120),
     details: z.string().trim().max(2000).optional(),
+    categoryId: z.string().trim().min(1).nullable().optional(),
     accountId: z.string().trim().min(1, 'An account is required'),
     destinationAccountId: z.string().trim().min(1).optional(),
     occurredAt: z.string().datetime().optional(),
+    visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
   })
   .refine(
     (data) =>
@@ -73,7 +75,9 @@ export const updateTransactionSchema = z.object({
   amountMinor: minorAmount.optional(),
   title: z.string().trim().min(1).max(120).optional(),
   details: z.string().trim().max(2000).nullable().optional(),
+  categoryId: z.string().trim().min(1).nullable().optional(),
   occurredAt: z.string().datetime().optional(),
   accountId: z.string().trim().min(1).optional(),
   destinationAccountId: z.string().trim().min(1).optional(),
+  visibility: z.enum(['SPACE', 'PRIVATE']).optional(),
 })

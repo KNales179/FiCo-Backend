@@ -1,22 +1,25 @@
 import { NextFunction, Response } from 'express'
+import mongoose from 'mongoose'
 import { z } from 'zod'
+import Category from '../models/Category.js'
 import ItemProfile, { IItemProfile } from '../models/ItemProfile.js'
 import PriceHistory from '../models/PriceHistory.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
+import { categoryNameById } from '../services/categoryService.js'
 import { suggestForName } from '../services/itemIntelligenceService.js'
 
 const serialize = (p: IItemProfile) => ({
   id: String(p._id),
   normalizedName: p.normalizedName,
   displayName: p.displayName,
-  category: p.category ?? null,
+  categoryId: p.categoryId ? String(p.categoryId) : null,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
 })
 
 const updateSchema = z.object({
   displayName: z.string().trim().min(1).max(120).optional(),
-  category: z.string().trim().max(60).nullable().optional(),
+  categoryId: z.string().trim().min(1).nullable().optional(),
 })
 
 /** GET /api/spaces/:spaceId/item-profiles */
@@ -130,8 +133,24 @@ export const updateItemProfile = async (
     if (result.data.displayName !== undefined) {
       profile.displayName = result.data.displayName
     }
-    if (result.data.category !== undefined) {
-      profile.category = result.data.category
+    if (result.data.categoryId !== undefined) {
+      if (result.data.categoryId === null) {
+        profile.categoryId = null
+      } else {
+        const category = await Category.findOne({
+          _id: mongoose.Types.ObjectId.isValid(result.data.categoryId)
+            ? result.data.categoryId
+            : null,
+          spaceId: req.space!._id,
+          deletedAt: null,
+        })
+        if (!category) {
+          return res
+            .status(422)
+            .json({ success: false, message: 'Unknown category' })
+        }
+        profile.categoryId = category._id as mongoose.Types.ObjectId
+      }
     }
 
     await profile.save()
@@ -139,7 +158,10 @@ export const updateItemProfile = async (
     return res.json({
       success: true,
       message: 'Item updated',
-      profile: serialize(profile),
+      profile: {
+        ...serialize(profile),
+        category: await categoryNameById(profile.categoryId),
+      },
     })
   } catch (error) {
     next(error)

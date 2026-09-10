@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import Membership from '../models/Membership.js'
 import Space from '../models/Space.js'
+import { seedDefaultCategories } from './categoryService.js'
 
 /**
  * Creates a user's private PERSONAL space and their OWNER membership in it.
@@ -23,6 +24,8 @@ export const createPersonalSpace = async (
     role: 'OWNER',
     status: 'ACTIVE',
   })
+
+  await seedDefaultCategories(space._id as mongoose.Types.ObjectId, userId)
 
   return space
 }

@@ -7,6 +7,7 @@ import ElectricityRecord from '../models/ElectricityRecord.js'
 import Transaction from '../models/Transaction.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
 import { serializeElectricity } from '../services/electricityService.js'
+import { visibilityFilter } from '../services/visibility.js'
 import { advanceDueDate, periodKey } from '../utils/recurrence.js'
 import {
   createBillSchema,
@@ -27,7 +28,9 @@ const serializeBill = (bill: IBill) => ({
     ? String(bill.paymentAccountId)
     : null,
   active: bill.active,
+  visibility: bill.visibility,
   tracksElectricity: bill.tracksElectricity,
+  createdBy: String(bill.createdBy),
   createdAt: bill.createdAt,
   updatedAt: bill.updatedAt,
 })
@@ -46,10 +49,17 @@ const serializePayment = (p: IBillPayment) => ({
 const loadBill = async (
   spaceId: mongoose.Types.ObjectId,
   billIdParam: string | string[],
+  userId: string,
 ) => {
   const billId = String(billIdParam)
   if (!mongoose.Types.ObjectId.isValid(billId)) return null
-  return Bill.findOne({ _id: billId, spaceId, deletedAt: null })
+  const query: Record<string, unknown> = {
+    _id: billId,
+    spaceId,
+    deletedAt: null,
+    ...visibilityFilter(userId),
+  }
+  return Bill.findOne(query)
 }
 
 /** GET /api/spaces/:spaceId/bills  (?upcomingBefore=ISO for the upcoming view) */
@@ -62,6 +72,7 @@ export const listBills = async (
     const filter: Record<string, unknown> = {
       spaceId: req.space!._id,
       deletedAt: null,
+      ...visibilityFilter(req.user!.id),
     }
     if (req.query.active === 'true') filter.active = true
     if (typeof req.query.upcomingBefore === 'string') {
@@ -105,6 +116,7 @@ export const createBill = async (
       categoryName: result.data.categoryName ?? null,
       paymentAccountId: result.data.paymentAccountId ?? null,
       active: true,
+      visibility: result.data.visibility ?? 'SPACE',
       tracksElectricity: result.data.tracksElectricity ?? false,
       createdBy: req.user!.id,
     })
@@ -126,7 +138,7 @@ export const getBill = async (
   next: NextFunction,
 ) => {
   try {
-    const bill = await loadBill(req.space!._id, req.params.billId)
+    const bill = await loadBill(req.space!._id, req.params.billId, req.user!.id)
     if (!bill) {
       return res
         .status(404)
@@ -163,7 +175,7 @@ export const updateBill = async (
       })
     }
 
-    const bill = await loadBill(req.space!._id, req.params.billId)
+    const bill = await loadBill(req.space!._id, req.params.billId, req.user!.id)
     if (!bill) {
       return res
         .status(404)
@@ -190,6 +202,12 @@ export const updateBill = async (
     if (d.tracksElectricity !== undefined) {
       bill.tracksElectricity = d.tracksElectricity
     }
+    if (
+      d.visibility !== undefined &&
+      String(bill.createdBy) === req.user!.id
+    ) {
+      bill.visibility = d.visibility
+    }
 
     await bill.save()
     return res.json({
@@ -209,7 +227,7 @@ export const deleteBill = async (
   next: NextFunction,
 ) => {
   try {
-    const bill = await loadBill(req.space!._id, req.params.billId)
+    const bill = await loadBill(req.space!._id, req.params.billId, req.user!.id)
     if (!bill) {
       return res
         .status(404)
@@ -248,7 +266,7 @@ export const payBill = async (
     }
 
     const spaceId = req.space!._id
-    const bill = await loadBill(spaceId, req.params.billId)
+    const bill = await loadBill(spaceId, req.params.billId, req.user!.id)
     if (!bill) {
       return res
         .status(404)
@@ -383,7 +401,7 @@ export const listBillPayments = async (
   next: NextFunction,
 ) => {
   try {
-    const bill = await loadBill(req.space!._id, req.params.billId)
+    const bill = await loadBill(req.space!._id, req.params.billId, req.user!.id)
     if (!bill) {
       return res
         .status(404)

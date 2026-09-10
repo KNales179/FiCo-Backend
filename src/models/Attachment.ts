@@ -14,8 +14,10 @@ export interface IAttachment extends Document {
   fileName: string
   mimeType: string
   size: number
-  /** Server-generated storage name (uuid + ext). The only thing that touches disk. */
+  /** Cloudinary public_id — the reference we sign delivery URLs against. */
   storageKey: string
+  /** Cloudinary resource_type (image / raw / video) for that public_id. */
+  resourceType: string
   createdBy: mongoose.Types.ObjectId
   deletedAt?: Date | null
   createdAt: Date
@@ -48,6 +50,7 @@ const attachmentSchema = new Schema<IAttachment>(
     mimeType: { type: String, required: true },
     size: { type: Number, required: true },
     storageKey: { type: String, required: true },
+    resourceType: { type: String, default: 'image' },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

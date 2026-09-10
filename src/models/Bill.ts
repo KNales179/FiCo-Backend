@@ -14,6 +14,7 @@ export interface IBill extends Document {
   categoryName?: string | null
   paymentAccountId?: mongoose.Types.ObjectId | null
   active: boolean
+  visibility: 'SPACE' | 'PRIVATE'
   /** Show the optional kWh / charge-breakdown fields when paying (Product Spec §16). */
   tracksElectricity: boolean
   deletedAt?: Date | null
@@ -64,6 +65,11 @@ const billSchema = new Schema<IBill>(
       default: null,
     },
     active: { type: Boolean, default: true },
+    visibility: {
+      type: String,
+      enum: ['SPACE', 'PRIVATE'],
+      default: 'SPACE',
+    },
     tracksElectricity: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
     createdBy: {
