@@ -8,6 +8,7 @@ export interface AuthRequest extends Request {
     id: string
     username: string
     email: string
+    displayName: string | null
   }
   sessionId?: string
   session?: {
@@ -107,6 +108,7 @@ export const authenticate = async (
       id: user.id,
       username: user.username,
       email: user.email,
+      displayName: user.displayName ?? null,
     }
 
     req.sessionId = sessionId

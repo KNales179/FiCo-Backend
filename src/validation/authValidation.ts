@@ -64,6 +64,12 @@ export const updateProfileSchema = z.object({
     .email('Invalid email address')
     .max(100, 'Email must not exceed 100 characters')
     .optional(),
+
+  displayName: z
+    .string()
+    .trim()
+    .max(60, 'Display name must not exceed 60 characters')
+    .optional(),
 })
 
 export const deleteAccountSchema = z.object({

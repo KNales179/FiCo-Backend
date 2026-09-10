@@ -4,6 +4,7 @@ export interface IUser extends Document {
   username: string
   email: string
   passwordHash: string
+  displayName?: string
   status: 'ACTIVE' | 'DISABLED'
   createdAt: Date
   updatedAt: Date
@@ -31,6 +32,13 @@ const userSchema = new Schema<IUser>(
     passwordHash: {
       type: String,
       required: true,
+    },
+
+    displayName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+      default: null,
     },
 
     status: {

@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
 import authRoutes from './routes/authRoutes.js'
+import spaceRoutes from './routes/spaceRoutes.js'
 
 const app = express()
 
@@ -28,6 +29,7 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.use('/api/auth', authRoutes)
+app.use('/api/spaces', spaceRoutes)
 
 app.use(notFound)
 app.use(errorHandler)

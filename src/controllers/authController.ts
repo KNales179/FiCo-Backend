@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express'
 import User from '../models/User.js'
 import Session from '../models/Session.js'
+import Membership from '../models/Membership.js'
+import Space from '../models/Space.js'
 import {
   hashPassword,
   verifyPassword,
@@ -16,6 +18,7 @@ import {
   deleteAccountSchema,
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
+import { createPersonalSpace } from '../services/spaceService.js'
 
 const SESSION_DURATION_DAYS =
   Number(process.env.SESSION_DURATION_DAYS) || 7
@@ -96,6 +99,8 @@ export const register = async (
       status: 'ACTIVE',
     })
 
+    await createPersonalSpace(user.id)
+
     const { expiresAt } = await createSession(user.id, res, deviceId)
 
     return res.status(201).json({
@@ -105,6 +110,7 @@ export const register = async (
         id: user.id,
         username: user.username,
         email: user.email,
+        displayName: user.displayName ?? null,
       },
       session: {
         expiresAt: expiresAt.toISOString(),
@@ -174,6 +180,7 @@ export const login = async (
         id: user.id,
         username: user.username,
         email: user.email,
+        displayName: user.displayName ?? null,
       },
       session: {
         expiresAt: expiresAt.toISOString(),
@@ -248,7 +255,11 @@ export const updateMe = async (
 
     const updates = result.data
 
-    if (!updates.username && !updates.email) {
+    if (
+      updates.username === undefined &&
+      updates.email === undefined &&
+      updates.displayName === undefined
+    ) {
       return res.status(400).json({
         success: false,
         message: 'No changes provided',
@@ -280,6 +291,10 @@ export const updateMe = async (
       user.username = updates.username
     }
 
+    if (updates.displayName !== undefined) {
+      user.displayName = updates.displayName || undefined
+    }
+
     if (updates.email) {
       const normalizedEmail = updates.email.toLowerCase()
 
@@ -309,6 +324,7 @@ export const updateMe = async (
         id: user.id,
         username: user.username,
         email: user.email,
+        displayName: user.displayName ?? null,
       },
     })
   } catch (error) {
@@ -359,6 +375,16 @@ export const deleteMe = async (
           revokedAt: new Date(),
         },
       },
+    )
+
+    // Revoke memberships and soft-delete any spaces this user owns.
+    await Membership.updateMany(
+      { userId: user._id, status: 'ACTIVE' },
+      { $set: { status: 'REVOKED' } },
+    )
+    await Space.updateMany(
+      { ownerId: user._id, deletedAt: null },
+      { $set: { deletedAt: new Date() } },
     )
 
     // Soft-disable the account for now.
