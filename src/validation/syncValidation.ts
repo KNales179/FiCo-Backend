@@ -172,6 +172,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
       .max(50)
       .optional(),
     includedOverdueBillIds: z.array(z.string().min(1)).max(50).optional(),
+    billAmountOverrides: z.record(z.string().min(1), nonNegInt).optional(),
     createdBy: id,
   }),
 }
