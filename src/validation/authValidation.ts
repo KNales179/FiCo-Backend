@@ -86,3 +86,21 @@ export const changePasswordSchema = z.object({
     .min(8, 'New password must be at least 8 characters')
     .max(128, 'New password must not exceed 128 characters'),
 })
+
+/**
+ * TEMPORARY (remove with the route + controller once real password reset —
+ * email-based — ships). No current password required: this exists only to
+ * unblock a locked-out account after the Sept 2026 database migration, where
+ * `devResetPasswordController` also refuses to run outside development.
+ */
+export const devResetPasswordSchema = z.object({
+  identifier: z
+    .string()
+    .trim()
+    .min(1, 'Username or email is required'),
+
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters')
+    .max(128, 'New password must not exceed 128 characters'),
+})

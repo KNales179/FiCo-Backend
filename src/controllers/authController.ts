@@ -17,6 +17,7 @@ import {
   loginSchema,
   updateProfileSchema,
   deleteAccountSchema,
+  devResetPasswordSchema,
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
@@ -392,6 +393,69 @@ export const deleteMe = async (
     return res.json({
       success: true,
       message: 'Account deleted successfully',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * TEMPORARY — POST /api/auth/dev-reset-password. No current password or
+ * session required, which is the whole point (a locked-out account can't
+ * supply either): it exists solely to recover from the Sept 2026 database
+ * migration until real, email-based password reset ships. Delete this
+ * handler, its route, its rate limiter, and `devResetPasswordSchema` once
+ * that's in place — grep the codebase for "dev-reset-password" to find every
+ * piece.
+ */
+export const devResetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({ success: false, message: 'Not found' })
+    }
+
+    const result = devResetPasswordSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data',
+        errors: result.error.flatten().fieldErrors,
+      })
+    }
+
+    const { identifier, newPassword } = result.data
+
+    const user = await User.findOne({
+      $or: [
+        { username: identifier },
+        { email: identifier.toLowerCase() },
+      ],
+    })
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'No Fico user matches that username or email',
+      })
+    }
+
+    user.passwordHash = await hashPassword(newPassword)
+    await user.save()
+
+    // Existing sessions were issued under the old password; revoke them so
+    // this is a clean recovery, not a way to keep a stale session alive.
+    await Session.updateMany(
+      { userId: user._id },
+      { $set: { revokedAt: new Date() } },
+    )
+
+    return res.json({
+      success: true,
+      message: `Password reset for ${user.username}. Log in with the new password.`,
     })
   } catch (error) {
     next(error)
