@@ -54,6 +54,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     normalizedName: z.string().min(1),
     kind: z.enum(['EXPENSE', 'INCOME']),
     archived: z.boolean(),
+    tracksItems: z.boolean().optional(),
     createdBy: id,
   }),
   shoppingList: z.object({

@@ -23,6 +23,7 @@ export const seedDefaultCategories = async (
             name: c.name,
             normalizedName: normalizeCategoryName(c.name),
             kind: c.kind,
+            tracksItems: c.tracksItems ?? false,
             createdBy: userId,
           },
         },

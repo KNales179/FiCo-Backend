@@ -8,6 +8,8 @@ export interface ICategory extends Document {
   normalizedName: string
   kind: CategoryKind
   archived: boolean
+  /** Picking this category switches entry to an itemized list (§ batch buying). */
+  tracksItems: boolean
   createdBy: mongoose.Types.ObjectId
   deletedAt?: Date | null
   createdAt: Date
@@ -36,6 +38,7 @@ const categorySchema = new Schema<ICategory>(
       default: 'EXPENSE',
     },
     archived: { type: Boolean, default: false },
+    tracksItems: { type: Boolean, default: false },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -59,13 +62,14 @@ export default Category
 export const DEFAULT_CATEGORIES: Array<{
   name: string
   kind: CategoryKind
+  tracksItems?: boolean
 }> = [
   { name: 'Food', kind: 'EXPENSE' },
-  { name: 'Groceries', kind: 'EXPENSE' },
+  { name: 'Groceries', kind: 'EXPENSE', tracksItems: true },
   { name: 'Transportation', kind: 'EXPENSE' },
   { name: 'Bills', kind: 'EXPENSE' },
   { name: 'Health', kind: 'EXPENSE' },
-  { name: 'Shopping', kind: 'EXPENSE' },
+  { name: 'Shopping', kind: 'EXPENSE', tracksItems: true },
   { name: 'Entertainment', kind: 'EXPENSE' },
   { name: 'Education', kind: 'EXPENSE' },
   { name: 'Other', kind: 'EXPENSE' },
