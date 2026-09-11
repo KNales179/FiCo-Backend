@@ -6,16 +6,11 @@ import {
   getMe,
   updateMe,
   deleteMe,
-  devResetPassword,
 } from '../controllers/authController.js'
 import { authenticate } from '../middleware/authMiddleware.js'
-import {
-  loginRateLimiter,
-  registerRateLimiter,
-  devResetPasswordRateLimiter,
-} from '../middleware/rateLimiter.js'
+import { loginRateLimiter, registerRateLimiter } from '../middleware/rateLimiter.js'
 
-const router = Router() 
+const router = Router()
 
 router.post(
   '/register',
@@ -51,14 +46,6 @@ router.delete(
   '/me',
   authenticate,
   deleteMe,
-)
-
-// TEMPORARY — remove this route once real password reset ships. Refuses to
-// run outside development inside the controller itself, as a second guard.
-router.post(
-  '/dev-reset-password',
-  devResetPasswordRateLimiter,
-  devResetPassword,
 )
 
 export default router
