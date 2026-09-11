@@ -147,6 +147,22 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     resolvedAt: z.string().nullable().optional(),
     createdBy: id,
   }),
+  budgetPlan: z.object({
+    ...base,
+    spaceId: id,
+    period: z.string().regex(/^\d{4}-\d{2}$/),
+    expectedIncomeMinor: z.number().int().nullable().optional(),
+    plannedItems: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(80),
+          amountMinor: nonNegInt,
+        }),
+      )
+      .max(50),
+    createdBy: id,
+  }),
 }
 
 export const SYNCABLE_ENTITY_TYPES = Object.keys(schemas)
