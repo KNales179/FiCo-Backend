@@ -4,6 +4,9 @@ export interface ISession extends Document {
   userId: mongoose.Types.ObjectId
   sessionHash: string
   deviceId?: string
+  /** Raw User-Agent header at login, for a person to recognize their own
+   *  devices ("Chrome on Windows") — not parsed/normalized, just stored. */
+  userAgent?: string | null
   expiresAt: Date
   lastUsedAt: Date
   revokedAt?: Date
@@ -29,6 +32,12 @@ const sessionSchema = new Schema<ISession>(
     deviceId: {
       type: String,
       default: null,
+    },
+
+    userAgent: {
+      type: String,
+      default: null,
+      maxlength: 300,
     },
 
     expiresAt: {

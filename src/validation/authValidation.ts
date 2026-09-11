@@ -86,3 +86,21 @@ export const changePasswordSchema = z.object({
     .min(8, 'New password must be at least 8 characters')
     .max(128, 'New password must not exceed 128 characters'),
 })
+
+/** The second step of login, once a password checked out but the account needs a code too. */
+export const verifyTwoFactorSchema = z.object({
+  pendingToken: z.string().min(1),
+  code: z.string().trim().min(1).max(20), // a 6-digit TOTP or an XXXXX-XXXXX backup code
+  deviceId: deviceIdSchema,
+})
+
+/** Confirming a freshly-generated TOTP secret actually works before it's enforced. */
+export const confirmTwoFactorSetupSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code'),
+})
+
+/** Turning 2FA back off needs both factors that are already on the account. */
+export const disableTwoFactorSchema = z.object({
+  password: z.string().min(1, 'Password is required'),
+  code: z.string().trim().min(1).max(20),
+})

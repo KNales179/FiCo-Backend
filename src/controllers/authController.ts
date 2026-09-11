@@ -1,6 +1,8 @@
+import crypto from 'crypto'
 import { Request, Response, NextFunction } from 'express'
 import User from '../models/User.js'
 import Session from '../models/Session.js'
+import TwoFactorChallenge from '../models/TwoFactorChallenge.js'
 import Membership from '../models/Membership.js'
 import Space from '../models/Space.js'
 import {
@@ -12,11 +14,14 @@ import {
   generateSessionId,
   hashSessionId,
 } from '../utils/session.js'
+import { verifyTotp } from '../utils/totp.js'
 import {
   registerSchema,
   loginSchema,
   updateProfileSchema,
   deleteAccountSchema,
+  changePasswordSchema,
+  verifyTwoFactorSchema,
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
@@ -24,11 +29,17 @@ import { consumePendingInvitations } from './spaceController.js'
 
 const SESSION_DURATION_DAYS =
   Number(process.env.SESSION_DURATION_DAYS) || 7
+/** How long a password-checked-out-but-2FA-pending login stays valid. */
+const TWO_FACTOR_CHALLENGE_MINUTES = 5
+
+const userAgentOf = (req: Request): string | null =>
+  (req.headers['user-agent'] as string | undefined)?.slice(0, 300) ?? null
 
 const createSession = async (
   userId: string,
   res: Response,
   deviceId?: string,
+  userAgent?: string | null,
 ): Promise<{ expiresAt: Date }> => {
   const sessionId = generateSessionId()
   const sessionHash = hashSessionId(sessionId)
@@ -43,6 +54,7 @@ const createSession = async (
     userId,
     sessionHash,
     ...(deviceId ? { deviceId } : {}),
+    ...(userAgent ? { userAgent } : {}),
     expiresAt,
     lastUsedAt: new Date(),
   })
@@ -57,6 +69,16 @@ const createSession = async (
 
   return { expiresAt }
 }
+
+/** Public shape of a user, for every auth response. */
+const toPublicUser = (user: InstanceType<typeof User>) => ({
+  id: user.id,
+  username: user.username,
+  email: user.email,
+  displayName: user.displayName ?? null,
+  role: user.role,
+  totpEnabled: user.totpEnabled,
+})
 
 export const register = async (
   req: Request,
@@ -104,17 +126,17 @@ export const register = async (
     await createPersonalSpace(user.id)
     await consumePendingInvitations(user.id, normalizedEmail)
 
-    const { expiresAt } = await createSession(user.id, res, deviceId)
+    const { expiresAt } = await createSession(
+      user.id,
+      res,
+      deviceId,
+      userAgentOf(req),
+    )
 
     return res.status(201).json({
       success: true,
       message: 'Account created successfully',
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName ?? null,
-      },
+      user: toPublicUser(user),
       session: {
         expiresAt: expiresAt.toISOString(),
       },
@@ -162,20 +184,134 @@ export const login = async (
       })
     }
 
-    const { expiresAt } = await createSession(user.id, res, deviceId)
+    // The password checked out — an admin with 2FA turned on still needs a
+    // code before a session is actually issued.
+    if (user.role === 'ADMIN' && user.totpEnabled) {
+      const pendingToken = generateSessionId()
+      const expiresAt = new Date(
+        Date.now() + TWO_FACTOR_CHALLENGE_MINUTES * 60 * 1000,
+      )
+      await TwoFactorChallenge.create({
+        userId: user.id,
+        tokenHash: hashSessionId(pendingToken),
+        deviceId,
+        userAgent: userAgentOf(req),
+        expiresAt,
+      })
+      return res.json({
+        success: true,
+        requiresTwoFactor: true,
+        pendingToken,
+        message: 'Enter your authenticator code to finish signing in',
+      })
+    }
+
+    const { expiresAt } = await createSession(
+      user.id,
+      res,
+      deviceId,
+      userAgentOf(req),
+    )
 
     return res.json({
       success: true,
       message: 'Login successful',
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName ?? null,
-      },
+      user: toPublicUser(user),
       session: {
         expiresAt: expiresAt.toISOString(),
       },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Second step of login for an account with 2FA on — a TOTP code or a backup code. */
+export const verifyTwoFactorLogin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = verifyTwoFactorSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request',
+      })
+    }
+
+    const { pendingToken, code, deviceId } = result.data
+    const challenge = await TwoFactorChallenge.findOne({
+      tokenHash: hashSessionId(pendingToken),
+      expiresAt: { $gt: new Date() },
+    })
+
+    if (!challenge) {
+      return res.status(401).json({
+        success: false,
+        message: 'That login attempt expired — sign in again',
+      })
+    }
+
+    const user = await User.findById(challenge.userId).select(
+      '+totpSecret +totpBackupCodeHashes',
+    )
+
+    if (!user || user.status !== 'ACTIVE' || !user.totpEnabled || !user.totpSecret) {
+      await challenge.deleteOne()
+      return res.status(401).json({
+        success: false,
+        message: 'Sign in again',
+      })
+    }
+
+    const validTotp = verifyTotp(code, user.totpSecret)
+    let usedBackupCodeHash: string | null = null
+
+    if (!validTotp) {
+      for (const hash of user.totpBackupCodeHashes) {
+        if (await verifyPassword(code, hash)) {
+          usedBackupCodeHash = hash
+          break
+        }
+      }
+    }
+
+    if (!validTotp && !usedBackupCodeHash) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid code',
+      })
+    }
+
+    // Single-use: the challenge is spent either way, and a backup code
+    // that was just used comes off the list permanently.
+    await challenge.deleteOne()
+    if (usedBackupCodeHash) {
+      user.totpBackupCodeHashes = user.totpBackupCodeHashes.filter(
+        (h) => h !== usedBackupCodeHash,
+      )
+      await user.save()
+    }
+
+    const { expiresAt } = await createSession(
+      user.id,
+      res,
+      deviceId ?? challenge.deviceId,
+      userAgentOf(req) ?? challenge.userAgent,
+    )
+
+    return res.json({
+      success: true,
+      message: 'Login successful',
+      user: toPublicUser(user),
+      session: {
+        expiresAt: expiresAt.toISOString(),
+      },
+      ...(usedBackupCodeHash
+        ? { backupCodesRemaining: user.totpBackupCodeHashes.length }
+        : {}),
     })
   } catch (error) {
     next(error)
@@ -393,6 +529,109 @@ export const deleteMe = async (
       success: true,
       message: 'Account deleted successfully',
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Change your own password while already signed in — distinct from the
+ *  still-deferred "forgot password" recovery flow, which needs an email
+ *  service this app doesn't have yet. This one just needs the current one. */
+export const changePassword = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = changePasswordSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request',
+        errors: result.error.flatten().fieldErrors,
+      })
+    }
+
+    const user = await User.findById(req.user?.id)
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    const valid = await verifyPassword(
+      result.data.currentPassword,
+      user.passwordHash,
+    )
+    if (!valid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect',
+      })
+    }
+
+    user.passwordHash = await hashPassword(result.data.newPassword)
+    await user.save()
+
+    return res.json({
+      success: true,
+      message: 'Password changed',
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Device recognition: every non-expired session on your own account. */
+export const listMySessions = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const sessions = await Session.find({
+      userId: req.user?.id,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).sort({ lastUsedAt: -1 })
+
+    const currentHash = req.sessionId ? hashSessionId(req.sessionId) : null
+
+    return res.json({
+      success: true,
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        deviceId: s.deviceId ?? null,
+        userAgent: s.userAgent ?? null,
+        createdAt: s.createdAt.toISOString(),
+        lastUsedAt: s.lastUsedAt.toISOString(),
+        expiresAt: s.expiresAt.toISOString(),
+        isCurrent: s.sessionHash === currentHash,
+      })),
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Revoke one of your own devices — "I don't recognize this, log it out." */
+export const revokeMySession = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const session = await Session.findOne({
+      _id: req.params.sessionId,
+      userId: req.user?.id,
+    })
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session not found' })
+    }
+
+    session.revokedAt = new Date()
+    await session.save()
+
+    return res.json({ success: true, message: 'Device signed out' })
   } catch (error) {
     next(error)
   }

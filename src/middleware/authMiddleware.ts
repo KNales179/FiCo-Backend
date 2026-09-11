@@ -9,6 +9,8 @@ export interface AuthRequest extends Request {
     username: string
     email: string
     displayName: string | null
+    role: 'ADMIN' | 'USER'
+    totpEnabled: boolean
   }
   sessionId?: string
   session?: {
@@ -109,6 +111,8 @@ export const authenticate = async (
       username: user.username,
       email: user.email,
       displayName: user.displayName ?? null,
+      role: user.role,
+      totpEnabled: user.totpEnabled,
     }
 
     req.sessionId = sessionId
@@ -120,4 +124,20 @@ export const authenticate = async (
   } catch (error) {
     next(error)
   }
+}
+
+/** Must follow `authenticate`. Gates the admin routes — managing other users'
+ *  accounts, not to be confused with a Finance/Space's own owner role. */
+export const requireAdmin = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  if (req.user?.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Admin access required',
+    })
+  }
+  next()
 }

@@ -24,6 +24,18 @@ export const registerRateLimiter = rateLimit({
   },
 })
 
+/** A 6-digit code has only a million combinations — keep guessing expensive. */
+export const twoFactorRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many attempts. Please try again later.',
+  },
+})
+
 /** Generous cap for the sync endpoints — a healthy client polls every 45s. */
 export const syncRateLimiter = rateLimit({
   windowMs: 60 * 1000,

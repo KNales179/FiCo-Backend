@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
 import authRoutes from './routes/authRoutes.js'
 import spaceRoutes from './routes/spaceRoutes.js'
+import adminRoutes from './routes/adminRoutes.js'
 
 const app = express()
 
@@ -49,6 +50,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes)
 app.use('/api/spaces', spaceRoutes)
+app.use('/api/admin', adminRoutes)
 
 app.use(notFound)
 app.use(errorHandler)
