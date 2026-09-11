@@ -161,6 +161,17 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
         }),
       )
       .max(50),
+    weeklyStaples: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(80),
+          amountMinor: nonNegInt,
+        }),
+      )
+      .max(50)
+      .optional(),
+    includedOverdueBillIds: z.array(z.string().min(1)).max(50).optional(),
     createdBy: id,
   }),
 }
