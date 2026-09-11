@@ -10,21 +10,21 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('VIEWER'), listTransactions)
-router.post('/', requireSpaceMember('EDITOR'), createTransaction)
+router.get('/', requireSpaceMember('MEMBER'), listTransactions)
+router.post('/', requireSpaceMember('MEMBER'), createTransaction)
 router.get(
   '/:transactionId',
-  requireSpaceMember('VIEWER'),
+  requireSpaceMember('MEMBER'),
   getTransaction,
 )
 router.patch(
   '/:transactionId',
-  requireSpaceMember('EDITOR'),
+  requireSpaceMember('MEMBER'),
   updateTransaction,
 )
 router.delete(
   '/:transactionId',
-  requireSpaceMember('EDITOR'),
+  requireSpaceMember('MEMBER'),
   deleteTransaction,
 )
 

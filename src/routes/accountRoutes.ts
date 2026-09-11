@@ -11,10 +11,10 @@ import {
 // mergeParams so `:spaceId` from the parent mount is visible here.
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('VIEWER'), listAccounts)
-router.post('/', requireSpaceMember('EDITOR'), createAccount)
-router.get('/:accountId', requireSpaceMember('VIEWER'), getAccount)
-router.patch('/:accountId', requireSpaceMember('EDITOR'), updateAccount)
-router.delete('/:accountId', requireSpaceMember('EDITOR'), deleteAccount)
+router.get('/', requireSpaceMember('MEMBER'), listAccounts)
+router.post('/', requireSpaceMember('MEMBER'), createAccount)
+router.get('/:accountId', requireSpaceMember('MEMBER'), getAccount)
+router.patch('/:accountId', requireSpaceMember('MEMBER'), updateAccount)
+router.delete('/:accountId', requireSpaceMember('MEMBER'), deleteAccount)
 
 export default router

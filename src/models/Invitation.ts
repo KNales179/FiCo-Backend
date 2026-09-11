@@ -1,13 +1,11 @@
 import crypto from 'crypto'
 import mongoose, { Document, Schema } from 'mongoose'
-import { MembershipRole } from './Membership.js'
 
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED'
 
 export interface IInvitation extends Document {
   spaceId: mongoose.Types.ObjectId
   email: string
-  role: Exclude<MembershipRole, 'OWNER'>
   token: string
   invitedBy: mongoose.Types.ObjectId
   status: InvitationStatus
@@ -31,11 +29,6 @@ const invitationSchema = new Schema<IInvitation>(
       lowercase: true,
       trim: true,
       index: true,
-    },
-    role: {
-      type: String,
-      enum: ['EDITOR', 'VIEWER'],
-      default: 'VIEWER',
     },
     token: {
       type: String,

@@ -21,7 +21,7 @@ export interface SpaceRequest extends AuthRequest {
  * never treated as security (Architecture §43, §45).
  */
 export const requireSpaceMember =
-  (minRole: MembershipRole = 'VIEWER') =>
+  (minRole: MembershipRole = 'MEMBER') =>
   async (req: SpaceRequest, res: Response, next: NextFunction) => {
     try {
       const { spaceId } = req.params

@@ -12,8 +12,8 @@ import {
 
 const router = Router({ mergeParams: true })
 
-const read = requireSpaceMember('VIEWER')
-const write = requireSpaceMember('EDITOR')
+const read = requireSpaceMember('MEMBER')
+const write = requireSpaceMember('MEMBER')
 
 router.get('/', read, listBills)
 router.post('/', write, createBill)

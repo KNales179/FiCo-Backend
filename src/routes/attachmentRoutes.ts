@@ -11,8 +11,8 @@ import {
 
 const router = Router({ mergeParams: true })
 
-const read = requireSpaceMember('VIEWER')
-const write = requireSpaceMember('EDITOR')
+const read = requireSpaceMember('MEMBER')
+const write = requireSpaceMember('MEMBER')
 
 /** Turn multer's errors into clean 400/413 responses. */
 const handleUpload = (

@@ -26,14 +26,14 @@ roadmap.
 | DELETE | `/api/spaces/:id`                        | owner         | Delete a family space               |
 | POST   | `/api/spaces/:id/leave`                  | member        | Leave a family space                |
 | GET    | `/api/spaces/:id/members`                | member        | List members                        |
-| POST   | `/api/spaces/:id/members`                | owner         | Add an existing user as editor/viewer |
-| PATCH  | `/api/spaces/:id/members/:userId`        | owner         | Change a member's role              |
+| POST   | `/api/spaces/:id/members`                | owner         | Add an existing user as a member    |
+| POST   | `/api/spaces/:id/transfer-ownership`     | owner         | Hand the Finance to another member  |
 | DELETE | `/api/spaces/:id/members/:userId`        | owner         | Remove a member                     |
 | GET    | `/api/spaces/:id/invitations`            | owner         | Pending email invitations           |
 | POST   | `/api/spaces/:id/invitations`            | owner         | Invite by email (adds existing users directly) |
 | DELETE | `/api/spaces/:id/invitations/:iid`       | owner         | Revoke a pending invitation         |
 | GET    | `/api/spaces/:id/action-logs`           | member        | Append-only activity trail          |
-| POST   | `/api/spaces/:id/sync/push`             | editor        | Batch of local mutations → replicated store (idempotent per event id) |
+| POST   | `/api/spaces/:id/sync/push`             | member        | Batch of local mutations → replicated store (idempotent per event id) |
 | GET    | `/api/spaces/:id/sync/pull?since=`      | member        | Records changed since a cursor (visibility-respecting) |
 
 `register` and `login` accept an optional `deviceId` and return

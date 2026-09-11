@@ -12,7 +12,6 @@ import { logAction } from '../services/actionLogService.js'
 import {
   addMemberSchema,
   createSpaceSchema,
-  updateMemberSchema,
   updateSpaceSchema,
 } from '../validation/spaceValidation.js'
 
@@ -289,7 +288,7 @@ export const addMember = async (
       })
     }
 
-    const { identifier, role } = result.data
+    const { identifier } = result.data
 
     const user = await User.findOne({
       status: 'ACTIVE',
@@ -327,13 +326,13 @@ export const addMember = async (
 
     if (existing) {
       existing.status = 'ACTIVE'
-      existing.role = role
+      existing.role = 'MEMBER'
       await existing.save()
     } else {
       await Membership.create({
         spaceId: space._id,
         userId: user._id,
-        role,
+        role: 'MEMBER',
         status: 'ACTIVE',
       })
     }
@@ -344,7 +343,7 @@ export const addMember = async (
       action: 'MEMBER_ADD',
       entityType: 'membership',
       entityId: String(user._id),
-      summary: `added ${user.username} as ${role.toLowerCase()}`,
+      summary: `added ${user.username} to the Finance`,
     })
 
     return res.status(201).json({
@@ -354,7 +353,7 @@ export const addMember = async (
         userId: String(user._id),
         username: user.username,
         displayName: user.displayName ?? null,
-        role,
+        role: 'MEMBER',
       },
     })
   } catch (error) {
@@ -362,70 +361,83 @@ export const addMember = async (
   }
 }
 
-/** PATCH /api/spaces/:spaceId/members/:userId — owner changes a member's role. */
-export const updateMemberRole = async (
+/**
+ * POST /api/spaces/:spaceId/transfer-ownership — the current owner hands the
+ * Finance to another active member. The old owner stays on as a normal member.
+ */
+export const transferOwnership = async (
   req: SpaceRequest,
   res: Response,
   next: NextFunction,
 ) => {
   try {
-    const result = updateMemberSchema.safeParse(req.body)
+    const result = z
+      .object({ userId: z.string().trim().min(1) })
+      .safeParse(req.body)
     if (!result.success) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid role',
-        errors: result.error.flatten().fieldErrors,
+        message: 'A member to transfer ownership to is required',
       })
     }
 
-    const userId = String(req.params.userId)
+    const targetUserId = result.data.userId
 
-    if (userId === req.user!.id) {
+    if (targetUserId === req.user!.id) {
       return res.status(400).json({
         success: false,
-        message: 'You cannot change your own role',
+        message: 'You already own this Finance',
       })
     }
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(404).json({
-        success: false,
-        message: 'Member not found',
-      })
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Member not found' })
     }
 
-    const membership = await Membership.findOne({
-      spaceId: req.space!._id,
-      userId: new mongoose.Types.ObjectId(userId),
+    const space = req.space!
+
+    const targetMembership = await Membership.findOne({
+      spaceId: space._id,
+      userId: new mongoose.Types.ObjectId(targetUserId),
       status: 'ACTIVE',
     })
-
-    if (!membership) {
-      return res.status(404).json({
-        success: false,
-        message: 'Member not found',
-      })
+    if (!targetMembership) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Member not found' })
     }
 
-    const oldRole = membership.role
-    membership.role = result.data.role
-    await membership.save()
+    const ownerMembership = req.membership!
+
+    targetMembership.role = 'OWNER'
+    ownerMembership.role = 'MEMBER'
+    space.ownerId = new mongoose.Types.ObjectId(targetUserId)
+
+    await Promise.all([
+      targetMembership.save(),
+      ownerMembership.save(),
+      space.save(),
+    ])
+
+    const newOwner = await User.findById(targetUserId).select('username')
 
     await logAction({
-      spaceId: req.space!._id,
+      spaceId: space._id,
       actorId: req.user!.id,
-      action: 'ROLE_CHANGE',
-      entityType: 'membership',
-      entityId: userId,
-      summary: `changed a member's role from ${oldRole.toLowerCase()} to ${result.data.role.toLowerCase()}`,
-      oldValue: oldRole,
-      newValue: result.data.role,
+      action: 'OWNERSHIP_TRANSFER',
+      entityType: 'space',
+      entityId: String(space._id),
+      summary: `transferred ownership to ${newOwner?.username ?? 'another member'}`,
+      oldValue: req.user!.id,
+      newValue: targetUserId,
     })
 
     return res.json({
       success: true,
-      message: 'Role updated',
-      member: { userId, role: membership.role },
+      message: 'Ownership transferred',
+      ownerId: targetUserId,
     })
   } catch (error) {
     next(error)
@@ -438,20 +450,17 @@ export const updateMemberRole = async (
 
 const inviteSchema = z.object({
   email: z.string().trim().email().max(100),
-  role: z.enum(['EDITOR', 'VIEWER']).default('VIEWER'),
 })
 
 const serializeInvitation = (inv: {
   _id: unknown
   email: string
-  role: string
   status: string
   expiresAt: Date
   createdAt: Date
 }) => ({
   id: String(inv._id),
   email: inv.email,
-  role: inv.role,
   status: inv.status,
   expiresAt: inv.expiresAt,
   createdAt: inv.createdAt,
@@ -524,13 +533,13 @@ export const createInvitation = async (
       }
       if (existing) {
         existing.status = 'ACTIVE'
-        existing.role = result.data.role
+        existing.role = 'MEMBER'
         await existing.save()
       } else {
         await Membership.create({
           spaceId: space._id,
           userId: user._id,
-          role: result.data.role,
+          role: 'MEMBER',
           status: 'ACTIVE',
         })
       }
@@ -540,7 +549,7 @@ export const createInvitation = async (
         action: 'MEMBER_ADD',
         entityType: 'membership',
         entityId: String(user._id),
-        summary: `added ${user.username} as ${result.data.role.toLowerCase()}`,
+        summary: `added ${user.username} to the Finance`,
       })
       return res.status(201).json({
         success: true,
@@ -555,14 +564,10 @@ export const createInvitation = async (
       email,
       status: 'PENDING',
     })
-    if (pending) {
-      pending.role = result.data.role
-      await pending.save()
-    } else {
+    if (!pending) {
       await Invitation.create({
         spaceId: space._id,
         email,
-        role: result.data.role,
         invitedBy: req.user!.id,
       })
     }
@@ -573,7 +578,7 @@ export const createInvitation = async (
       action: 'INVITE',
       entityType: 'invitation',
       entityId: email,
-      summary: `invited ${email} as ${result.data.role.toLowerCase()}`,
+      summary: `invited ${email} to the Finance`,
     })
 
     return res.status(201).json({
@@ -643,7 +648,7 @@ export const consumePendingInvitations = async (
         $setOnInsert: {
           spaceId: invitation.spaceId,
           userId,
-          role: invitation.role,
+          role: 'MEMBER',
           status: 'ACTIVE',
         },
       },

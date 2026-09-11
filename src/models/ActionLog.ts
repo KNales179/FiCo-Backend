@@ -14,6 +14,7 @@ export type ActionType =
   | 'MEMBER_ADD'
   | 'MEMBER_REMOVE'
   | 'ROLE_CHANGE'
+  | 'OWNERSHIP_TRANSFER'
   | 'INVITE'
   | 'CONFLICT'
 
@@ -55,6 +56,17 @@ const actionLogSchema = new Schema<IActionLog>(
 
 actionLogSchema.index({ spaceId: 1, createdAt: -1 })
 actionLogSchema.index({ spaceId: 1, entityType: 1, entityId: 1 })
+
+/**
+ * Retention: the activity feed is a rolling window, not a permanent archive.
+ * MongoDB's TTL monitor drops entries older than this (default 365 days;
+ * override with `ACTION_LOG_TTL_DAYS`).
+ */
+const ttlDays = Number(process.env.ACTION_LOG_TTL_DAYS) || 365
+actionLogSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: ttlDays * 24 * 60 * 60 },
+)
 
 const ActionLog = mongoose.model<IActionLog>('ActionLog', actionLogSchema)
 

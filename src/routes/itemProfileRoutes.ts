@@ -9,16 +9,16 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('VIEWER'), listItemProfiles)
-router.get('/suggest', requireSpaceMember('VIEWER'), suggestItem)
+router.get('/', requireSpaceMember('MEMBER'), listItemProfiles)
+router.get('/suggest', requireSpaceMember('MEMBER'), suggestItem)
 router.get(
   '/:profileId/prices',
-  requireSpaceMember('VIEWER'),
+  requireSpaceMember('MEMBER'),
   itemPriceHistory,
 )
 router.patch(
   '/:profileId',
-  requireSpaceMember('EDITOR'),
+  requireSpaceMember('MEMBER'),
   updateItemProfile,
 )
 

@@ -21,7 +21,7 @@ const PERIODS: AnalyticsPeriod[] = [
 /** GET /api/spaces/:spaceId/analytics?period=&from=&to=&currency= */
 router.get(
   '/',
-  requireSpaceMember('VIEWER'),
+  requireSpaceMember('MEMBER'),
   async (req: SpaceRequest, res: Response, next: NextFunction) => {
     try {
       const period = PERIODS.includes(req.query.period as AnalyticsPeriod)

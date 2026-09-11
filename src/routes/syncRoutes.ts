@@ -8,7 +8,7 @@ const router = Router({ mergeParams: true })
 router.use(syncRateLimiter)
 
 // Any active member may sync; per-record visibility is enforced inside.
-router.post('/push', requireSpaceMember('EDITOR'), pushSync)
-router.get('/pull', requireSpaceMember('VIEWER'), pullSync)
+router.post('/push', requireSpaceMember('MEMBER'), pushSync)
+router.get('/pull', requireSpaceMember('MEMBER'), pullSync)
 
 export default router

@@ -28,7 +28,7 @@ import {
   listMySpaces,
   removeMember,
   revokeInvitation,
-  updateMemberRole,
+  transferOwnership,
   updateSpace,
 } from '../controllers/spaceController.js'
 
@@ -39,19 +39,19 @@ router.use(authenticate)
 router.get('/', listMySpaces)
 router.post('/', createSpace)
 
-router.get('/:spaceId', requireSpaceMember('VIEWER'), getSpace)
+router.get('/:spaceId', requireSpaceMember('MEMBER'), getSpace)
 router.patch('/:spaceId', requireSpaceMember('OWNER'), updateSpace)
 router.delete('/:spaceId', requireSpaceMember('OWNER'), deleteSpace)
 
 router.post(
   '/:spaceId/leave',
-  requireSpaceMember('VIEWER'),
+  requireSpaceMember('MEMBER'),
   leaveSpace,
 )
 
 router.get(
   '/:spaceId/members',
-  requireSpaceMember('VIEWER'),
+  requireSpaceMember('MEMBER'),
   listMembers,
 )
 router.post(
@@ -59,10 +59,10 @@ router.post(
   requireSpaceMember('OWNER'),
   addMember,
 )
-router.patch(
-  '/:spaceId/members/:userId',
+router.post(
+  '/:spaceId/transfer-ownership',
   requireSpaceMember('OWNER'),
-  updateMemberRole,
+  transferOwnership,
 )
 router.delete(
   '/:spaceId/members/:userId',

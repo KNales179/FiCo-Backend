@@ -9,9 +9,9 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('VIEWER'), listCategories)
-router.post('/', requireSpaceMember('EDITOR'), createCategory)
-router.patch('/:categoryId', requireSpaceMember('EDITOR'), updateCategory)
-router.delete('/:categoryId', requireSpaceMember('EDITOR'), deleteCategory)
+router.get('/', requireSpaceMember('MEMBER'), listCategories)
+router.post('/', requireSpaceMember('MEMBER'), createCategory)
+router.patch('/:categoryId', requireSpaceMember('MEMBER'), updateCategory)
+router.delete('/:categoryId', requireSpaceMember('MEMBER'), deleteCategory)
 
 export default router

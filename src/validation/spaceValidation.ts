@@ -15,11 +15,6 @@ export const updateSpaceSchema = z.object({
 })
 
 export const addMemberSchema = z.object({
-  /** Username or email of an existing Fico user. */
+  /** Username or email of an existing Fico user. Everyone joins as a full member. */
   identifier: z.string().trim().min(1, 'A username or email is required'),
-  role: z.enum(['EDITOR', 'VIEWER']).default('VIEWER'),
-})
-
-export const updateMemberSchema = z.object({
-  role: z.enum(['EDITOR', 'VIEWER']),
 })

@@ -7,12 +7,12 @@ import {
 
 /** Mounted at /:spaceId/electricity */
 export const electricityRouter = Router({ mergeParams: true })
-electricityRouter.get('/', requireSpaceMember('VIEWER'), listElectricity)
+electricityRouter.get('/', requireSpaceMember('MEMBER'), listElectricity)
 
 /** Mounted at /:spaceId/bill-payments */
 export const billPaymentRouter = Router({ mergeParams: true })
 billPaymentRouter.put(
   '/:paymentId/electricity',
-  requireSpaceMember('EDITOR'),
+  requireSpaceMember('MEMBER'),
   upsertElectricityForPayment,
 )
