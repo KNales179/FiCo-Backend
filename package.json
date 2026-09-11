@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
-    "promote-admin": "tsx scripts/promoteAdmin.ts"
+    "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
