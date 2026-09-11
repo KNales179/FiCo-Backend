@@ -69,6 +69,7 @@ export interface SpaceAnalytics {
   billSpendMinor: number
   transactionCount: number
   byCategory: Array<{ name: string; amountMinor: number; pct: number }>
+  byMember: Array<{ userId: string; amountMinor: number; pct: number }>
   byMonth: Array<{
     month: string
     incomeMinor: number
@@ -95,6 +96,7 @@ interface TxnLike {
   occurredAt?: string
   currency?: string
   visibility?: string
+  createdBy?: string
 }
 
 export const computeSpaceAnalytics = async (
@@ -131,6 +133,7 @@ export const computeSpaceAnalytics = async (
   let transferMinor = 0
   let billSpendMinor = 0
   const categoryMap = new Map<string, number>()
+  const memberMap = new Map<string, number>()
   const monthMap = new Map<
     string,
     { month: string; incomeMinor: number; expenseMinor: number }
@@ -153,6 +156,9 @@ export const computeSpaceAnalytics = async (
       }
       const cat = txn.categoryName?.trim() || 'Uncategorized'
       categoryMap.set(cat, (categoryMap.get(cat) ?? 0) + amount)
+      if (txn.createdBy) {
+        memberMap.set(txn.createdBy, (memberMap.get(txn.createdBy) ?? 0) + amount)
+      }
     } else if (txn.type === 'TRANSFER') {
       transferMinor += amount
     }
@@ -232,6 +238,14 @@ export const computeSpaceAnalytics = async (
     }))
     .sort((a, b) => b.amountMinor - a.amountMinor)
 
+  const byMember = [...memberMap.entries()]
+    .map(([userId, amountMinor]) => ({
+      userId,
+      amountMinor,
+      pct: expenseMinor > 0 ? (amountMinor / expenseMinor) * 100 : 0,
+    }))
+    .sort((a, b) => b.amountMinor - a.amountMinor)
+
   return {
     range,
     currency,
@@ -244,6 +258,7 @@ export const computeSpaceAnalytics = async (
     billSpendMinor,
     transactionCount: transactions.length,
     byCategory,
+    byMember,
     byMonth: [...monthMap.values()].sort((a, b) =>
       a.month.localeCompare(b.month),
     ),
