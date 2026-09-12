@@ -22,9 +22,27 @@ if (process.env.NODE_ENV === 'production') {
 app.use(helmet())
 app.use(requestLogger)
 
+// FRONTEND_URL accepts a comma-separated list — one deployed frontend is the
+// common case, but a Vercel project alone often has more than one real
+// origin (a production domain plus a preview-deployment URL, or an apex
+// domain and its www), and each needs to be explicitly allow-listed since
+// `cors` here reflects a specific origin rather than "*" (required anyway
+// for cookies — credentials:true never works with a wildcard origin).
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // No Origin header at all (a same-origin request, curl, a health
+      // check) — nothing to check against, let it through.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true)
+      }
+      callback(new Error('Not allowed by CORS'))
+    },
     credentials: true,
   }),
 )

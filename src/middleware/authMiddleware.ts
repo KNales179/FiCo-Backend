@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import Session from '../models/Session.js'
 import User from '../models/User.js'
-import { hashSessionId } from '../utils/session.js'
+import { hashSessionId, sessionCookieOptions } from '../utils/session.js'
 
 export interface AuthRequest extends Request {
   user?: {
@@ -61,7 +61,7 @@ export const authenticate = async (
     })
 
     if (!session) {
-      res.clearCookie('fico_session')
+      res.clearCookie('fico_session', sessionCookieOptions())
 
       return res.status(401).json({
         success: false,
@@ -77,7 +77,7 @@ export const authenticate = async (
         { $set: { revokedAt: new Date() } },
       )
 
-      res.clearCookie('fico_session')
+      res.clearCookie('fico_session', sessionCookieOptions())
 
       return res.status(401).json({
         success: false,
@@ -98,11 +98,8 @@ export const authenticate = async (
       session.expiresAt = nextExpiry
 
       res.cookie('fico_session', sessionId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        ...sessionCookieOptions(),
         expires: nextExpiry,
-        path: '/',
       })
     }
 

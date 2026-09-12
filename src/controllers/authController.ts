@@ -13,6 +13,7 @@ import {
 import {
   generateSessionId,
   hashSessionId,
+  sessionCookieOptions,
 } from '../utils/session.js'
 import { verifyTotp } from '../utils/totp.js'
 import { deleteAvatar, uploadAvatar } from '../services/attachmentStorage.js'
@@ -76,11 +77,8 @@ const createSession = async (
   })
 
   res.cookie('fico_session', sessionId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    ...sessionCookieOptions(),
     expires: expiresAt,
-    path: '/',
   })
 
   return { expiresAt }
@@ -383,12 +381,7 @@ export const logout = async (
       )
     }
 
-    res.clearCookie('fico_session', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-    })
+    res.clearCookie('fico_session', sessionCookieOptions())
 
     return res.json({
       success: true,
@@ -664,12 +657,7 @@ export const deleteMe = async (
     user.status = 'DISABLED'
     await user.save()
 
-    res.clearCookie('fico_session', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-    })
+    res.clearCookie('fico_session', sessionCookieOptions())
 
     return res.json({
       success: true,
