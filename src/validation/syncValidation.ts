@@ -29,6 +29,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     openingBalanceMinor: minorInt,
     status: z.enum(['ACTIVE', 'ARCHIVED']),
     isDefault: z.boolean().optional(),
+    createdBy: id.optional(),
   }),
   transaction: z.object({
     ...base,

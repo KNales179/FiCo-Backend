@@ -1,8 +1,11 @@
+import mongoose from 'mongoose'
 import { NextFunction, Response } from 'express'
 import SyncRecord, { ProcessedEvent } from '../models/SyncRecord.js'
+import Membership from '../models/Membership.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
 import { logAction } from '../services/actionLogService.js'
 import type { ActionType } from '../models/ActionLog.js'
+import { sendPushToUser } from '../utils/push.js'
 import {
   pushSchema,
   validateSyncPayload,
@@ -31,6 +34,131 @@ const OPERATION_TO_ACTION: Record<string, ActionType> = {
   PAY: 'PAY',
   SHARE: 'SHARE',
   UNSHARE: 'UNSHARE',
+}
+
+/** Every other *active* member of the space — never the person who made the change. */
+const otherActiveMembers = async (
+  spaceId: mongoose.Types.ObjectId | string,
+  actorUserId: string,
+): Promise<string[]> => {
+  const members = await Membership.find({ spaceId, status: 'ACTIVE' })
+  return members
+    .map((m) => String(m.userId))
+    .filter((id) => id !== actorUserId)
+}
+
+/**
+ * Push notifications for the rest of a shared Finance (Roadmap feedback):
+ * someone else creating a shopping list or a bill, or paying one, is worth
+ * knowing about even away from the app. Best effort — a stalled/misconfigured
+ * push setup must never affect whether the sync push itself succeeds.
+ */
+const notifyOtherMembers = async (
+  spaceId: mongoose.Types.ObjectId | string,
+  userId: string,
+  entityType: string,
+  operation: string,
+  payload: Record<string, unknown>,
+): Promise<void> => {
+  try {
+    if (entityType === 'shoppingList' && operation === 'CREATE') {
+      const title = (payload.title as string) || 'A shopping list'
+      const others = await otherActiveMembers(spaceId, userId)
+      await Promise.all(
+        others.map((id) =>
+          sendPushToUser(id, {
+            title: 'New shopping list',
+            body: `"${title}" was just added`,
+            tag: `shopping-list-${payload.id}`,
+            url: '/shopping',
+          }),
+        ),
+      )
+      return
+    }
+
+    if (entityType === 'bill' && operation === 'CREATE') {
+      const name = (payload.name as string) || 'A bill'
+      const others = await otherActiveMembers(spaceId, userId)
+      await Promise.all(
+        others.map((id) =>
+          sendPushToUser(id, {
+            title: 'New bill added',
+            body: name,
+            tag: `bill-${payload.id}`,
+            url: '/bills',
+          }),
+        ),
+      )
+      return
+    }
+
+    if (entityType === 'billPayment' && operation === 'PAY') {
+      const bill = await SyncRecord.findOne({
+        spaceId,
+        entityType: 'bill',
+        clientId: payload.billId as string,
+      })
+      const name = (bill?.payload.name as string) || 'A bill'
+      const others = await otherActiveMembers(spaceId, userId)
+      await Promise.all(
+        others.map((id) =>
+          sendPushToUser(id, {
+            title: 'Bill paid',
+            body: name,
+            tag: `bill-payment-${payload.id}`,
+            url: '/bills',
+          }),
+        ),
+      )
+    }
+  } catch (error) {
+    console.error('[fico/api] Could not send change notification:', error)
+  }
+}
+
+/**
+ * A transaction touching an account *someone else* added (Roadmap
+ * feedback: "user1 made a transfer from user1's account to user2's
+ * account, user2 will be notified") — the account's own `createdBy` marks
+ * whose it is for this purpose. Only fires when the actor differs from
+ * the account's owner; never for the owner's own activity on their account.
+ */
+const notifyAccountOwnerOfTransaction = async (
+  spaceId: mongoose.Types.ObjectId | string,
+  userId: string,
+  payload: Record<string, unknown>,
+): Promise<void> => {
+  try {
+    const accountIds = [payload.accountId, payload.destinationAccountId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    )
+    if (accountIds.length === 0) return
+
+    const accounts = await SyncRecord.find({
+      spaceId,
+      entityType: 'account',
+      clientId: { $in: accountIds },
+    })
+
+    const notified = new Set<string>()
+    await Promise.all(
+      accounts.map(async (record) => {
+        const ownerId = record.payload.createdBy as string | undefined
+        if (!ownerId || ownerId === userId || notified.has(ownerId)) return
+        notified.add(ownerId)
+        const name = (payload.title as string) || 'A transaction'
+        await sendPushToUser(ownerId, {
+          title: 'Activity on your account',
+          body: name,
+          tag: `transaction-${payload.id}`,
+          url: '/',
+        })
+      }),
+    )
+  } catch (error) {
+    console.error('[fico/api] Could not notify account owner:', error)
+  }
 }
 
 const summarize = (
@@ -252,6 +380,17 @@ export const pushSync = async (
             entityId: event.entityId,
             summary: summarize(event.entityType, event.operation, payload),
           })
+        }
+
+        await notifyOtherMembers(
+          spaceId,
+          userId,
+          event.entityType,
+          event.operation,
+          payload,
+        )
+        if (event.entityType === 'transaction' && event.operation === 'CREATE') {
+          await notifyAccountOwnerOfTransaction(spaceId, userId, payload)
         }
       } catch (eventError) {
         // Something went wrong applying this one event — release the
