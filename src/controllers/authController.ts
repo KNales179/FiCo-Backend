@@ -133,6 +133,8 @@ export const register = async (
     }
 
     const { username, email, password, deviceId } = result.data
+    // registerSchema requires this to be the literal `true` — reaching here
+    // means it was actually agreed to, not just present.
 
     const normalizedEmail = email.toLowerCase()
 
@@ -157,6 +159,7 @@ export const register = async (
       email: normalizedEmail,
       passwordHash,
       status: 'ACTIVE',
+      termsAcceptedAt: new Date(),
     })
 
     await createPersonalSpace(user.id)

@@ -43,6 +43,12 @@ export interface IUser extends Document {
     /** Only meaningful for an admin account, but harmless on every other one. */
     feedbackReports: boolean
   }
+  /** When this account agreed to the Terms & Conditions — required at
+   *  registration (§ registerSchema); an audit trail, never re-checked to
+   *  gate anything (an existing account isn't retroactively logged out
+   *  because the terms text changed later). Absent on an account that
+   *  predates this field. */
+  termsAcceptedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -164,6 +170,11 @@ const userSchema = new Schema<IUser>(
         accountActivity: true,
         feedbackReports: true,
       }),
+    },
+
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
     },
   },
   {

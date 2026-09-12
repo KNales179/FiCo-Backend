@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
 import rateLimit from 'express-rate-limit'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
+import { requestLogger } from './middleware/requestLogger.js'
 import authRoutes from './routes/authRoutes.js'
 import spaceRoutes from './routes/spaceRoutes.js'
 import adminRoutes from './routes/adminRoutes.js'
@@ -19,6 +20,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use(helmet())
+app.use(requestLogger)
 
 app.use(
   cors({

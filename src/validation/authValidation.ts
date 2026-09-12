@@ -30,6 +30,13 @@ export const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password must not exceed 128 characters'),
 
+  // The server is the source of truth for "did they actually agree" —
+  // a checkbox the frontend forgot to require, or a direct API call, must
+  // never be able to create an account without it.
+  termsAccepted: z.literal(true, {
+    message: 'You must agree to the Terms & Conditions',
+  }),
+
   deviceId: deviceIdSchema,
 })
 
