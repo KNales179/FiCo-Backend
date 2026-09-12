@@ -7,6 +7,7 @@ import {
   adminSetRoleSchema,
 } from '../validation/adminValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
+import { logAdminAudit } from '../services/adminAuditService.js'
 
 /**
  * Re-checks the *acting admin's own* current password — every sensitive
@@ -66,6 +67,13 @@ export const setUserPassword = async (
     }
 
     if (!(await confirmActingAdmin(req, result.data.confirmPassword))) {
+      await logAdminAudit({
+        actorId: req.user!.id,
+        action: 'STEP_UP_FAILED',
+        targetUserId: String(req.params.userId),
+        result: 'FAILURE',
+        detail: 'setUserPassword: wrong confirmation password',
+      })
       return res.status(401).json({
         success: false,
         message: "That's not your current password",
@@ -86,6 +94,14 @@ export const setUserPassword = async (
       { userId: target.id },
       { $set: { revokedAt: new Date() } },
     )
+
+    await logAdminAudit({
+      actorId: req.user!.id,
+      action: 'SET_PASSWORD',
+      targetUserId: target.id,
+      result: 'SUCCESS',
+      detail: `password changed for ${target.username}`,
+    })
 
     return res.json({
       success: true,
@@ -112,6 +128,13 @@ export const setUserRole = async (
     }
 
     if (!(await confirmActingAdmin(req, result.data.confirmPassword))) {
+      await logAdminAudit({
+        actorId: req.user!.id,
+        action: 'STEP_UP_FAILED',
+        targetUserId: String(req.params.userId),
+        result: 'FAILURE',
+        detail: 'setUserRole: wrong confirmation password',
+      })
       return res.status(401).json({
         success: false,
         message: "That's not your current password",
@@ -135,6 +158,14 @@ export const setUserRole = async (
 
     target.role = result.data.role
     await target.save()
+
+    await logAdminAudit({
+      actorId: req.user!.id,
+      action: 'SET_ROLE',
+      targetUserId: target.id,
+      result: 'SUCCESS',
+      detail: `${target.username} set to ${result.data.role}`,
+    })
 
     return res.json({
       success: true,
@@ -195,6 +226,14 @@ export const revokeUserSession = async (
 
     session.revokedAt = new Date()
     await session.save()
+
+    await logAdminAudit({
+      actorId: req.user!.id,
+      action: 'REVOKE_SESSION',
+      targetUserId: String(req.params.userId),
+      result: 'SUCCESS',
+      detail: session.deviceId ? `device ${session.deviceId}` : null,
+    })
 
     return res.json({ success: true, message: 'Device signed out' })
   } catch (error) {
