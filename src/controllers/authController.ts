@@ -15,6 +15,11 @@ import {
   hashSessionId,
 } from '../utils/session.js'
 import { verifyTotp } from '../utils/totp.js'
+import { generateToken, hashToken } from '../utils/token.js'
+import {
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+} from '../services/emailService.js'
 import {
   registerSchema,
   loginSchema,
@@ -22,6 +27,9 @@ import {
   deleteAccountSchema,
   changePasswordSchema,
   verifyTwoFactorSchema,
+  verifyEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
@@ -31,6 +39,12 @@ const SESSION_DURATION_DAYS =
   Number(process.env.SESSION_DURATION_DAYS) || 7
 /** How long a password-checked-out-but-2FA-pending login stays valid. */
 const TWO_FACTOR_CHALLENGE_MINUTES = 5
+const EMAIL_VERIFICATION_HOURS = 24
+const PASSWORD_RESET_MINUTES = 60
+
+/** Generic response either way — never reveals whether an account exists. */
+const FORGOT_PASSWORD_MESSAGE =
+  "If an account matches that, we've sent an email with instructions."
 
 const userAgentOf = (req: Request): string | null =>
   (req.headers['user-agent'] as string | undefined)?.slice(0, 300) ?? null
@@ -78,7 +92,25 @@ const toPublicUser = (user: InstanceType<typeof User>) => ({
   displayName: user.displayName ?? null,
   role: user.role,
   totpEnabled: user.totpEnabled,
+  emailVerified: user.emailVerified,
 })
+
+/**
+ * Generates a fresh verification token, saves its hash (never the token
+ * itself — a database leak alone should never hand out a working link),
+ * and emails it. Shared by `register` and `resendVerificationEmail`.
+ */
+const issueEmailVerification = async (
+  user: InstanceType<typeof User>,
+): Promise<void> => {
+  const token = generateToken()
+  user.emailVerificationTokenHash = hashToken(token)
+  user.emailVerificationExpiresAt = new Date(
+    Date.now() + EMAIL_VERIFICATION_HOURS * 60 * 60 * 1000,
+  )
+  await user.save()
+  await sendVerificationEmail(user.email, user.displayName || user.username, token)
+}
 
 export const register = async (
   req: Request,
@@ -125,6 +157,13 @@ export const register = async (
 
     await createPersonalSpace(user.id)
     await consumePendingInvitations(user.id, normalizedEmail)
+
+    // Best effort — a person can always ask for the email again from
+    // Account, and a stalled/misconfigured email provider must never block
+    // account creation itself.
+    void issueEmailVerification(user).catch((error) => {
+      console.error('[fico/api] Could not send verification email:', error)
+    })
 
     const { expiresAt } = await createSession(
       user.id,
@@ -534,9 +573,9 @@ export const deleteMe = async (
   }
 }
 
-/** Change your own password while already signed in — distinct from the
- *  still-deferred "forgot password" recovery flow, which needs an email
- *  service this app doesn't have yet. This one just needs the current one. */
+/** Change your own password while already signed in — needs the current
+ *  one. `forgotPassword`/`resetPassword` below are the recovery path for
+ *  when you don't have that. */
 export const changePassword = async (
   req: AuthRequest,
   res: Response,
@@ -632,6 +671,167 @@ export const revokeMySession = async (
     await session.save()
 
     return res.json({ success: true, message: 'Device signed out' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Ask again — the earlier link expired, or the email never arrived. */
+export const resendVerificationEmail = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const user = await User.findById(req.user?.id)
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    if (user.emailVerified) {
+      return res.json({ success: true, message: 'Your email is already verified' })
+    }
+
+    await issueEmailVerification(user)
+
+    return res.json({
+      success: true,
+      message: `Sent a new link to ${user.email}`,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** The link a person clicks from the verification email. */
+export const verifyEmail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = verifyEmailSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: 'Missing token' })
+    }
+
+    const user = await User.findOne({
+      emailVerificationTokenHash: hashToken(result.data.token),
+      emailVerificationExpiresAt: { $gt: new Date() },
+    }).select('+emailVerificationTokenHash +emailVerificationExpiresAt')
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'That link is invalid or has expired — ask for a new one from Account.',
+      })
+    }
+
+    user.emailVerified = true
+    user.emailVerificationTokenHash = null
+    user.emailVerificationExpiresAt = null
+    await user.save()
+
+    return res.json({ success: true, message: 'Email verified' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Starts a password reset. Always responds the same way regardless of
+ * whether the account exists (account enumeration) — the email itself,
+ * sent only when it genuinely does, is where the actual signal lives.
+ */
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = forgotPasswordSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: 'Invalid request' })
+    }
+
+    const { identifier } = result.data
+    const user = await User.findOne({
+      status: 'ACTIVE',
+      $or: [
+        { username: identifier },
+        { email: identifier.toLowerCase() },
+      ],
+    })
+
+    if (user) {
+      const token = generateToken()
+      user.passwordResetTokenHash = hashToken(token)
+      user.passwordResetExpiresAt = new Date(
+        Date.now() + PASSWORD_RESET_MINUTES * 60 * 1000,
+      )
+      await user.save()
+      try {
+        await sendPasswordResetEmail(
+          user.email,
+          user.displayName || user.username,
+          token,
+        )
+      } catch (error) {
+        console.error('[fico/api] Could not send password reset email:', error)
+      }
+    }
+
+    return res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** The link a person clicks from the password-reset email, plus their new password. */
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = resetPasswordSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request',
+        errors: result.error.flatten().fieldErrors,
+      })
+    }
+
+    const user = await User.findOne({
+      passwordResetTokenHash: hashToken(result.data.token),
+      passwordResetExpiresAt: { $gt: new Date() },
+    }).select('+passwordResetTokenHash +passwordResetExpiresAt')
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'That link is invalid or has expired — request a new one.',
+      })
+    }
+
+    user.passwordHash = await hashPassword(result.data.newPassword)
+    user.passwordResetTokenHash = null
+    user.passwordResetExpiresAt = null
+    await user.save()
+
+    // A password reset this way means the old one may have leaked (or was
+    // simply forgotten) — every device signs in fresh either way, same as
+    // an admin setting a new password on someone else's account.
+    await Session.updateMany(
+      { userId: user._id },
+      { $set: { revokedAt: new Date() } },
+    )
+
+    return res.json({
+      success: true,
+      message: 'Password reset. Sign in with your new password.',
+    })
   } catch (error) {
     next(error)
   }

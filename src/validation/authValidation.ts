@@ -104,3 +104,20 @@ export const disableTwoFactorSchema = z.object({
   password: z.string().min(1, 'Password is required'),
   code: z.string().trim().min(1).max(20),
 })
+
+export const verifyEmailSchema = z.object({
+  token: z.string().trim().min(1, 'Missing token'),
+})
+
+/** Same flexible username-or-email lookup as login — never reveals which it matched. */
+export const forgotPasswordSchema = z.object({
+  identifier: z.string().trim().min(1, 'Username or email is required'),
+})
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(1, 'Missing token'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters')
+    .max(128, 'New password must not exceed 128 characters'),
+})

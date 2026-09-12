@@ -10,6 +10,10 @@ import {
   changePassword,
   listMySessions,
   revokeMySession,
+  resendVerificationEmail,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
 } from '../controllers/authController.js'
 import {
   startTwoFactorSetup,
@@ -19,6 +23,7 @@ import {
 import { authenticate } from '../middleware/authMiddleware.js'
 import {
   accountSecurityRateLimiter,
+  emailSendRateLimiter,
   loginRateLimiter,
   registerRateLimiter,
   twoFactorRateLimiter,
@@ -106,6 +111,31 @@ router.post(
   authenticate,
   twoFactorRateLimiter,
   disableTwoFactor,
+)
+
+router.post(
+  '/verify-email/resend',
+  authenticate,
+  emailSendRateLimiter,
+  resendVerificationEmail,
+)
+
+router.post(
+  '/verify-email',
+  twoFactorRateLimiter,
+  verifyEmail,
+)
+
+router.post(
+  '/forgot-password',
+  emailSendRateLimiter,
+  forgotPassword,
+)
+
+router.post(
+  '/reset-password',
+  twoFactorRateLimiter,
+  resetPassword,
 )
 
 export default router

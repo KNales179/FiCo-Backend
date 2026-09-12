@@ -76,6 +76,23 @@ export const adminActionRateLimiter = rateLimit({
   },
 })
 
+/**
+ * Any endpoint that sends an email — resending a verification link,
+ * starting a password reset. Same tier as registration: emails cost real
+ * provider quota, and this is a classic target for "spam someone's inbox"
+ * abuse.
+ */
+export const emailSendRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many requests. Please try again later.',
+  },
+})
+
 /** Receipt/attachment uploads — bounded separately from ordinary API calls since each one costs real Cloudinary bandwidth. */
 export const uploadRateLimiter = rateLimit({
   windowMs: 60 * 1000,

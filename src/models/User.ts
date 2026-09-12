@@ -18,6 +18,16 @@ export interface IUser extends Document {
   totpEnabled: boolean
   /** Argon2 hashes of unused one-time backup codes — never the plaintext. */
   totpBackupCodeHashes: string[]
+  /** Confirmed ownership of the email on file — informational only (shown to
+   *  an admin, and to the account itself as a reminder); never blocks
+   *  login or any feature. Absent on a document means `false` via the
+   *  schema default, which is exactly the point for every account that
+   *  existed before this feature did. */
+  emailVerified: boolean
+  emailVerificationTokenHash?: string | null
+  emailVerificationExpiresAt?: Date | null
+  passwordResetTokenHash?: string | null
+  passwordResetExpiresAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -82,6 +92,35 @@ const userSchema = new Schema<IUser>(
     totpBackupCodeHashes: {
       type: [String],
       default: [],
+      select: false,
+    },
+
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Same `select: false` convention as the TOTP secret above — a plain
+    // `User.find()`/`.findById()` never carries these; the controllers that
+    // actually validate a token ask for them explicitly.
+    emailVerificationTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailVerificationExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    passwordResetTokenHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpiresAt: {
+      type: Date,
+      default: null,
       select: false,
     },
   },

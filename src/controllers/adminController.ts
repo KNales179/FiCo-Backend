@@ -42,6 +42,7 @@ export const listUsers = async (
         status: u.status,
         role: u.role,
         totpEnabled: u.totpEnabled,
+        emailVerified: u.emailVerified,
         createdAt: u.createdAt.toISOString(),
         isSelf: u.id === req.user?.id,
       })),
