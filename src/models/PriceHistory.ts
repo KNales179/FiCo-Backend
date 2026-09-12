@@ -6,6 +6,11 @@ export interface IPriceHistory extends Document {
   amountMinor: number
   purchasedAt: Date
   transactionId?: mongoose.Types.ObjectId | null
+  /** Snapshot of the purchase line as it was rung up, independent of the
+   *  (mutable, deletable) item profile and shopping item it came from. */
+  name?: string | null
+  quantity?: number | null
+  categoryName?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -38,6 +43,9 @@ const priceHistorySchema = new Schema<IPriceHistory>(
       ref: 'Transaction',
       default: null,
     },
+    name: { type: String, default: null },
+    quantity: { type: Number, default: null },
+    categoryName: { type: String, default: null },
   },
   { timestamps: true },
 )

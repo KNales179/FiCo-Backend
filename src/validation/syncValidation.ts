@@ -95,6 +95,9 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     amountMinor: nonNegInt,
     purchasedAt: iso,
     transactionId: z.string().nullable().optional(),
+    name: z.string().max(120).nullable().optional(),
+    quantity: z.number().positive().max(100000).nullable().optional(),
+    categoryName: z.string().max(80).nullable().optional(),
   }),
   bill: z.object({
     ...base,
