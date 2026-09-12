@@ -93,6 +93,18 @@ export const emailSendRateLimiter = rateLimit({
   },
 })
 
+/** Submitting a bug report or suggestion — generous, but not unlimited spam. */
+export const feedbackRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many reports in a row. Please try again later.',
+  },
+})
+
 /** Receipt/attachment uploads — bounded separately from ordinary API calls since each one costs real Cloudinary bandwidth. */
 export const uploadRateLimiter = rateLimit({
   windowMs: 60 * 1000,

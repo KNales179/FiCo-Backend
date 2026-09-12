@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes.js'
 import spaceRoutes from './routes/spaceRoutes.js'
 import adminRoutes from './routes/adminRoutes.js'
 import pushRoutes from './routes/pushRoutes.js'
+import feedbackRoutes from './routes/feedbackRoutes.js'
 
 const app = express()
 
@@ -53,6 +54,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/spaces', spaceRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/push', pushRoutes)
+app.use('/api/feedback', feedbackRoutes)
 
 app.use(notFound)
 app.use(errorHandler)
