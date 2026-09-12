@@ -27,3 +27,19 @@ export const uploadReceipt = multer({
     }
   },
 })
+
+const AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
+export const MAX_AVATAR_BYTES = 5 * 1024 * 1024
+
+/** A profile picture — images only, smaller cap than a receipt/document. */
+export const uploadAvatar = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_AVATAR_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (AVATAR_MIME.has(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('UNSUPPORTED_FILE_TYPE'))
+    }
+  },
+})

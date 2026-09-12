@@ -28,6 +28,21 @@ export interface IUser extends Document {
   emailVerificationExpiresAt?: Date | null
   passwordResetTokenHash?: string | null
   passwordResetExpiresAt?: Date | null
+  /** Cloudinary-hosted, same as receipt attachments. Null until uploaded. */
+  avatarUrl?: string | null
+  avatarPublicId?: string | null
+  /** Which categories of push notification this account wants. Every
+   *  category defaults true; absent on a document (any account from before
+   *  this existed) resolves to the same all-true default via the schema,
+   *  not to "muted". */
+  notificationPreferences: {
+    billReminders: boolean
+    shoppingUpdates: boolean
+    billUpdates: boolean
+    accountActivity: boolean
+    /** Only meaningful for an admin account, but harmless on every other one. */
+    feedbackReports: boolean
+  }
   createdAt: Date
   updatedAt: Date
 }
@@ -122,6 +137,33 @@ const userSchema = new Schema<IUser>(
       type: Date,
       default: null,
       select: false,
+    },
+
+    avatarUrl: {
+      type: String,
+      default: null,
+    },
+    avatarPublicId: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    notificationPreferences: {
+      type: {
+        billReminders: { type: Boolean, default: true },
+        shoppingUpdates: { type: Boolean, default: true },
+        billUpdates: { type: Boolean, default: true },
+        accountActivity: { type: Boolean, default: true },
+        feedbackReports: { type: Boolean, default: true },
+      },
+      default: () => ({
+        billReminders: true,
+        shoppingUpdates: true,
+        billUpdates: true,
+        accountActivity: true,
+        feedbackReports: true,
+      }),
     },
   },
   {

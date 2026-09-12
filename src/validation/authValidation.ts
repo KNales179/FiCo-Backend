@@ -114,6 +114,15 @@ export const forgotPasswordSchema = z.object({
   identifier: z.string().trim().min(1, 'Username or email is required'),
 })
 
+/** Settings page — any subset of categories, only the ones actually changed. */
+export const notificationPreferencesSchema = z.object({
+  billReminders: z.boolean().optional(),
+  shoppingUpdates: z.boolean().optional(),
+  billUpdates: z.boolean().optional(),
+  accountActivity: z.boolean().optional(),
+  feedbackReports: z.boolean().optional(),
+})
+
 export const resetPasswordSchema = z.object({
   token: z.string().trim().min(1, 'Missing token'),
   newPassword: z

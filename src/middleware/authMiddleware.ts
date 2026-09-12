@@ -12,6 +12,14 @@ export interface AuthRequest extends Request {
     role: 'ADMIN' | 'USER'
     totpEnabled: boolean
     emailVerified: boolean
+    avatarUrl: string | null
+    notificationPreferences: {
+      billReminders: boolean
+      shoppingUpdates: boolean
+      billUpdates: boolean
+      accountActivity: boolean
+      feedbackReports: boolean
+    }
   }
   sessionId?: string
   session?: {
@@ -115,6 +123,8 @@ export const authenticate = async (
       role: user.role,
       totpEnabled: user.totpEnabled,
       emailVerified: user.emailVerified,
+      avatarUrl: user.avatarUrl ?? null,
+      notificationPreferences: user.notificationPreferences,
     }
 
     req.sessionId = sessionId

@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express'
 import Feedback from '../models/Feedback.js'
 import User from '../models/User.js'
-import { sendPushToUser } from '../utils/push.js'
+import { sendPushToUserIfEnabled } from '../utils/push.js'
 import {
   createFeedbackSchema,
   feedbackStatusSchema,
@@ -36,7 +36,7 @@ export const createFeedback = async (
       .then((admins) =>
         Promise.all(
           admins.map((admin) =>
-            sendPushToUser(admin.id, {
+            sendPushToUserIfEnabled(admin.id, 'feedbackReports', {
               title:
                 result.data.type === 'BUG' ? 'New bug report' : 'New suggestion',
               body: `${req.user!.username}: ${result.data.message.slice(0, 120)}`,

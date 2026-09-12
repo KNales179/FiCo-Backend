@@ -1,7 +1,7 @@
 import SyncRecord from '../models/SyncRecord.js'
 import Membership from '../models/Membership.js'
 import BillNotificationLog from '../models/BillNotificationLog.js'
-import { isPushConfigured, sendPushToUser } from '../utils/push.js'
+import { isPushConfigured, sendPushToUserIfEnabled } from '../utils/push.js'
 
 /** Matches the frontend's own `DUE_SOON_DAYS` (domain/bills.ts) — same
  *  window as the in-app banner, so a push never fires for something the
@@ -59,7 +59,7 @@ export const runBillReminderCheck = async (): Promise<void> => {
 
     await Promise.all(
       members.map((member) =>
-        sendPushToUser(member.userId, {
+        sendPushToUserIfEnabled(member.userId, 'billReminders', {
           title: overdue ? 'Bill overdue' : 'Bill due soon',
           body: `${payload.name ?? 'A bill'} — ${dueDate.toLocaleDateString()}`,
           tag: `bill-${payload.id}`,

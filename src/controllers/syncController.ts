@@ -5,7 +5,7 @@ import Membership from '../models/Membership.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
 import { logAction } from '../services/actionLogService.js'
 import type { ActionType } from '../models/ActionLog.js'
-import { sendPushToUser } from '../utils/push.js'
+import { sendPushToUserIfEnabled } from '../utils/push.js'
 import {
   pushSchema,
   validateSyncPayload,
@@ -66,7 +66,7 @@ const notifyOtherMembers = async (
       const others = await otherActiveMembers(spaceId, userId)
       await Promise.all(
         others.map((id) =>
-          sendPushToUser(id, {
+          sendPushToUserIfEnabled(id, 'shoppingUpdates', {
             title: 'New shopping list',
             body: `"${title}" was just added`,
             tag: `shopping-list-${payload.id}`,
@@ -82,7 +82,7 @@ const notifyOtherMembers = async (
       const others = await otherActiveMembers(spaceId, userId)
       await Promise.all(
         others.map((id) =>
-          sendPushToUser(id, {
+          sendPushToUserIfEnabled(id, 'billUpdates', {
             title: 'New bill added',
             body: name,
             tag: `bill-${payload.id}`,
@@ -103,7 +103,7 @@ const notifyOtherMembers = async (
       const others = await otherActiveMembers(spaceId, userId)
       await Promise.all(
         others.map((id) =>
-          sendPushToUser(id, {
+          sendPushToUserIfEnabled(id, 'billUpdates', {
             title: 'Bill paid',
             body: name,
             tag: `bill-payment-${payload.id}`,
@@ -148,7 +148,7 @@ const notifyAccountOwnerOfTransaction = async (
         if (!ownerId || ownerId === userId || notified.has(ownerId)) return
         notified.add(ownerId)
         const name = (payload.title as string) || 'A transaction'
-        await sendPushToUser(ownerId, {
+        await sendPushToUserIfEnabled(ownerId, 'accountActivity', {
           title: 'Activity on your account',
           body: name,
           tag: `transaction-${payload.id}`,

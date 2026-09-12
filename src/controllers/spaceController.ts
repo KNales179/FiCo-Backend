@@ -241,7 +241,7 @@ export const listMembers = async (
     const users = await User.find({
       _id: { $in: memberships.map((m) => m.userId) },
     })
-      .select('username displayName')
+      .select('username displayName avatarUrl')
       .lean()
 
     const userById = new Map(users.map((u) => [String(u._id), u]))
@@ -252,6 +252,7 @@ export const listMembers = async (
         userId: String(m.userId),
         username: user?.username ?? null,
         displayName: user?.displayName ?? null,
+        avatarUrl: user?.avatarUrl ?? null,
         role: m.role,
         joinedAt: m.createdAt,
       }

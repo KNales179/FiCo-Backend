@@ -15,6 +15,7 @@ import {
   hashSessionId,
 } from '../utils/session.js'
 import { verifyTotp } from '../utils/totp.js'
+import { deleteAvatar, uploadAvatar } from '../services/attachmentStorage.js'
 import { generateToken, hashToken } from '../utils/token.js'
 import {
   sendPasswordResetEmail,
@@ -30,6 +31,7 @@ import {
   verifyEmailSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  notificationPreferencesSchema,
 } from '../validation/authValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
@@ -93,6 +95,8 @@ const toPublicUser = (user: InstanceType<typeof User>) => ({
   role: user.role,
   totpEnabled: user.totpEnabled,
   emailVerified: user.emailVerified,
+  avatarUrl: user.avatarUrl ?? null,
+  notificationPreferences: user.notificationPreferences,
 })
 
 /**
@@ -493,6 +497,106 @@ export const updateMe = async (
         displayName: user.displayName ?? null,
       },
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Settings page — mute/unmute specific push notification categories. */
+export const updateNotificationPreferences = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = notificationPreferencesSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request',
+        errors: result.error.flatten().fieldErrors,
+      })
+    }
+
+    const user = await User.findById(req.user?.id)
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    user.notificationPreferences = {
+      ...user.notificationPreferences,
+      ...result.data,
+    }
+    await user.save()
+
+    return res.json({
+      success: true,
+      message: 'Notification preferences updated',
+      notificationPreferences: user.notificationPreferences,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/** Account/Settings page — a profile picture, visible to fellow space members. */
+export const uploadMyAvatar = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const file = (req as AuthRequest & { file?: { buffer: Buffer; mimetype: string } })
+      .file
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'No image provided' })
+    }
+
+    // avatarPublicId is `select: false` (it's Cloudinary bookkeeping, not
+    // something any API response should ever include) — it has to be
+    // opted back in explicitly here, or the previous asset can never be
+    // found to delete on a replace.
+    const user = await User.findById(req.user?.id).select('+avatarPublicId')
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    const previousPublicId = user.avatarPublicId
+    const uploaded = await uploadAvatar(file.buffer, file.mimetype)
+
+    user.avatarUrl = uploaded.url
+    user.avatarPublicId = uploaded.publicId
+    await user.save()
+
+    if (previousPublicId) {
+      await deleteAvatar(previousPublicId)
+    }
+
+    return res.json({ success: true, avatarUrl: user.avatarUrl })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const deleteMyAvatar = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const user = await User.findById(req.user?.id).select('+avatarPublicId')
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    if (user.avatarPublicId) {
+      await deleteAvatar(user.avatarPublicId)
+    }
+    user.avatarUrl = null
+    user.avatarPublicId = null
+    await user.save()
+
+    return res.json({ success: true, message: 'Profile picture removed' })
   } catch (error) {
     next(error)
   }

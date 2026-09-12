@@ -1,6 +1,7 @@
 import webpush from 'web-push'
 import mongoose from 'mongoose'
 import PushSubscription from '../models/PushSubscription.js'
+import User from '../models/User.js'
 
 let configured = false
 
@@ -39,6 +40,32 @@ export interface PushPayload {
  * bad subscription shouldn't stop the rest of this user's devices, or the
  * caller's loop over other users.
  */
+export type NotificationCategory =
+  | 'billReminders'
+  | 'shoppingUpdates'
+  | 'billUpdates'
+  | 'accountActivity'
+  | 'feedbackReports'
+
+/**
+ * Same as `sendPushToUser`, but checks the recipient's own notification
+ * preferences (Settings page) first — every other push call site in the
+ * app should go through this one instead of calling `sendPushToUser`
+ * directly, so muting a category actually works everywhere it's sent
+ * from. A missing preferences doc (an account from before this existed)
+ * resolves to "on", matching the schema default.
+ */
+export const sendPushToUserIfEnabled = async (
+  userId: mongoose.Types.ObjectId | string,
+  category: NotificationCategory,
+  payload: PushPayload,
+): Promise<void> => {
+  if (!isPushConfigured()) return
+  const user = await User.findById(userId).select('notificationPreferences')
+  if (user && user.notificationPreferences?.[category] === false) return
+  await sendPushToUser(userId, payload)
+}
+
 export const sendPushToUser = async (
   userId: mongoose.Types.ObjectId | string,
   payload: PushPayload,

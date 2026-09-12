@@ -94,6 +94,38 @@ export const deleteReceipt = async (
     .catch(() => undefined)
 }
 
+/**
+ * A profile picture (Settings/Account page) — same Cloudinary account as
+ * receipts, but a plain public `upload` rather than `authenticated`:
+ * unlike a receipt, this is meant to be freely visible to fellow space
+ * members (a member list, an activity entry, an engagement view) without
+ * a signed-URL round trip on every view.
+ */
+export const uploadAvatar = async (
+  buffer: Buffer,
+  mimeType: string,
+): Promise<{ url: string; publicId: string }> => {
+  ensureConfigured()
+
+  const dataUri = `data:${mimeType};base64,${buffer.toString('base64')}`
+
+  const result = await cloudinary.uploader.upload(dataUri, {
+    folder: 'fico/avatars',
+    resource_type: 'image',
+    overwrite: true,
+    transformation: [{ width: 256, height: 256, crop: 'fill', gravity: 'face' }],
+  })
+
+  return { url: result.secure_url, publicId: result.public_id }
+}
+
+export const deleteAvatar = async (publicId: string): Promise<void> => {
+  ensureConfigured()
+  await cloudinary.uploader
+    .destroy(publicId, { resource_type: 'image' })
+    .catch(() => undefined)
+}
+
 export const isStorageConfigured = (): boolean => {
   try {
     ensureConfigured()
