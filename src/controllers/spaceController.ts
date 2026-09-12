@@ -329,12 +329,27 @@ export const addMember = async (
       existing.role = 'MEMBER'
       await existing.save()
     } else {
-      await Membership.create({
-        spaceId: space._id,
-        userId: user._id,
-        role: 'MEMBER',
-        status: 'ACTIVE',
-      })
+      try {
+        await Membership.create({
+          spaceId: space._id,
+          userId: user._id,
+          role: 'MEMBER',
+          status: 'ACTIVE',
+        })
+      } catch (createError) {
+        // Lost the race on the unique (spaceId, userId) index — someone
+        // else added this same user a moment ago. Reactivate that row
+        // instead of surfacing a raw duplicate-key error for something
+        // that isn't really a conflict from the caller's point of view.
+        const raced = await Membership.findOne({
+          spaceId: space._id,
+          userId: user._id,
+        })
+        if (!raced) throw createError
+        raced.status = 'ACTIVE'
+        raced.role = 'MEMBER'
+        await raced.save()
+      }
     }
 
     await logAction({
