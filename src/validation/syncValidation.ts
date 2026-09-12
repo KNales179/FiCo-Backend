@@ -73,7 +73,8 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     name: z.string().min(1).max(120),
     plannedPriceMinor: z.number().int().nullable().optional(),
     actualPriceMinor: z.number().int().nullable().optional(),
-    quantity: z.number().int().min(1),
+    // A whole piece count, or a weight in kg (decimals — 0.756kg of pork).
+    quantity: z.number().positive().max(100000),
     checked: z.boolean(),
     purchased: z.boolean(),
     addedDuringTrip: z.boolean(),
