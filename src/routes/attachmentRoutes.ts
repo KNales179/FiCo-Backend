@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express'
 import { MulterError } from 'multer'
 import { requireSpaceMember } from '../middleware/spaceAccess.js'
 import { MAX_FILE_BYTES, uploadReceipt } from '../middleware/upload.js'
+import { uploadRateLimiter } from '../middleware/rateLimiter.js'
 import {
   deleteAttachment,
   downloadAttachment,
@@ -42,7 +43,7 @@ const handleUpload = (
 }
 
 router.get('/', read, listAttachments)
-router.post('/', write, handleUpload, uploadAttachment)
+router.post('/', write, uploadRateLimiter, handleUpload, uploadAttachment)
 router.get('/:attachmentId/file', read, downloadAttachment)
 router.delete('/:attachmentId', write, deleteAttachment)
 

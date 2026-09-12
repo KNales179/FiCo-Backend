@@ -47,3 +47,43 @@ export const syncRateLimiter = rateLimit({
     message: 'Syncing too frequently. Slow down.',
   },
 })
+
+/** Changing your own password/security settings — same tier as 2FA attempts. */
+export const accountSecurityRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many attempts. Please try again later.',
+  },
+})
+
+/**
+ * Actions an admin takes on someone *else's* account — password resets,
+ * role changes, forced sign-outs. A real admin doesn't do dozens of these
+ * a minute; a compromised admin session or a runaway script might.
+ */
+export const adminActionRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many admin actions in a row. Slow down.',
+  },
+})
+
+/** Receipt/attachment uploads — bounded separately from ordinary API calls since each one costs real Cloudinary bandwidth. */
+export const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many uploads in a row. Please slow down.',
+  },
+})

@@ -18,6 +18,7 @@ import {
 } from '../controllers/twoFactorController.js'
 import { authenticate } from '../middleware/authMiddleware.js'
 import {
+  accountSecurityRateLimiter,
   loginRateLimiter,
   registerRateLimiter,
   twoFactorRateLimiter,
@@ -70,6 +71,7 @@ router.delete(
 router.post(
   '/change-password',
   authenticate,
+  accountSecurityRateLimiter,
   changePassword,
 )
 
@@ -88,6 +90,7 @@ router.post(
 router.post(
   '/2fa/setup',
   authenticate,
+  twoFactorRateLimiter,
   startTwoFactorSetup,
 )
 
