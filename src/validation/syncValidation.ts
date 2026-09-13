@@ -40,6 +40,10 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     title: z.string().min(1).max(120),
     accountId: id,
     destinationAccountId: z.string().nullable().optional(),
+    // Cross-currency TRANSFER only — how much lands in the destination
+    // account, in its own currency, plus the rate used to get there.
+    destinationAmountMinor: nonNegInt.nullable().optional(),
+    exchangeRate: z.number().positive().nullable().optional(),
     occurredAt: iso,
     categoryId: z.string().nullable().optional(),
     categoryName: z.string().max(60).nullable().optional(),
@@ -104,13 +108,18 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     ...base,
     spaceId: id,
     name: z.string().min(1).max(80),
-    recurrence: z.enum(['MONTHLY', 'YEARLY']),
+    recurrence: z.enum(['MONTHLY', 'YEARLY', 'SCHEDULED', 'NONE']),
     billType: z.enum(['FIXED', 'VARIABLE']),
     expectedAmountMinor: z.number().int().nullable().optional(),
-    nextDueDate: iso,
+    // Null for NONE always, and for SCHEDULED once every date on it has
+    // been paid with none newer added yet.
+    nextDueDate: iso.nullable(),
+    // SCHEDULED only — every still-unpaid date on this bill.
+    scheduledDates: z.array(iso).nullable().optional(),
     active: z.boolean(),
     visibility,
     tracksElectricity: z.boolean(),
+    categoryId: z.string().nullable().optional(),
     categoryName: z.string().nullable().optional(),
     createdBy: z.string().optional(),
   }),

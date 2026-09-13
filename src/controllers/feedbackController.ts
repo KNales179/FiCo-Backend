@@ -84,6 +84,9 @@ export const listFeedback = async (
         message: row.message,
         status: row.status,
         createdAt: row.createdAt.toISOString(),
+        // So the admin's own submitted feedback never lights up their own
+        // "new suggestion" nav badge — see features/seen's isUnseen.
+        createdBy: row.userId?._id ? String(row.userId._id) : null,
         reporter: {
           username: row.userId?.username ?? 'Unknown',
           displayName: row.userId?.displayName ?? null,

@@ -23,6 +23,7 @@ const serializeSpace = (
   name: space.name,
   type: space.type,
   ownerId: String(space.ownerId),
+  currency: space.currency || 'PHP',
   role: role ?? null,
   createdAt: space.createdAt,
   updatedAt: space.updatedAt,
@@ -123,7 +124,7 @@ export const getSpace = async (req: SpaceRequest, res: Response) => {
   })
 }
 
-/** PATCH /api/spaces/:spaceId — rename (owner only). */
+/** PATCH /api/spaces/:spaceId — rename and/or change currency (owner only). */
 export const updateSpace = async (
   req: SpaceRequest,
   res: Response,
@@ -140,8 +141,29 @@ export const updateSpace = async (
     }
 
     const space = req.space!
-    space.name = result.data.name
+    const oldCurrency = space.currency
+
+    if (result.data.name !== undefined) space.name = result.data.name
+    if (result.data.currency !== undefined) {
+      space.currency = result.data.currency
+    }
     await space.save()
+
+    if (
+      result.data.currency !== undefined &&
+      result.data.currency !== oldCurrency
+    ) {
+      await logAction({
+        spaceId: space._id,
+        actorId: req.user!.id,
+        action: 'UPDATE',
+        entityType: 'space',
+        entityId: String(space._id),
+        summary: `changed the Finance's currency to ${result.data.currency}`,
+        oldValue: oldCurrency,
+        newValue: result.data.currency,
+      })
+    }
 
     return res.json({
       success: true,

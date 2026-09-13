@@ -6,6 +6,8 @@ export interface ISpace extends Document {
   name: string
   type: SpaceType
   ownerId: mongoose.Types.ObjectId
+  /** This Finance's currency — every account created in it defaults to it. */
+  currency: string
   deletedAt?: Date | null
   createdAt: Date
   updatedAt: Date
@@ -32,6 +34,14 @@ const spaceSchema = new Schema<ISpace>(
       ref: 'User',
       required: true,
       index: true,
+    },
+
+    currency: {
+      type: String,
+      default: 'PHP',
+      uppercase: true,
+      minlength: 3,
+      maxlength: 3,
     },
 
     deletedAt: {
