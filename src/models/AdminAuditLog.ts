@@ -15,6 +15,7 @@ export type AdminAuditAction =
   | 'SET_PASSWORD'
   | 'SET_ROLE'
   | 'REVOKE_SESSION'
+  | 'RESET_2FA'
   | 'STEP_UP_FAILED'
 
 export interface IAdminAuditLog extends Document {

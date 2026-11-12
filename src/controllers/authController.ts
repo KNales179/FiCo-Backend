@@ -228,9 +228,9 @@ export const login = async (
       })
     }
 
-    // The password checked out — an admin with 2FA turned on still needs a
-    // code before a session is actually issued.
-    if (user.role === 'ADMIN' && user.totpEnabled) {
+    // The password checked out — anyone who turned 2FA on (it's optional,
+    // for every account) still needs a code before a session is issued.
+    if (user.totpEnabled) {
       const pendingToken = generateSessionId()
       const expiresAt = new Date(
         Date.now() + TWO_FACTOR_CHALLENGE_MINUTES * 60 * 1000,

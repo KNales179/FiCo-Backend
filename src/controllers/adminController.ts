@@ -3,6 +3,7 @@ import User from '../models/User.js'
 import Session from '../models/Session.js'
 import { hashPassword, verifyPassword } from '../utils/password.js'
 import {
+  adminResetTwoFactorSchema,
   adminSetPasswordSchema,
   adminSetRoleSchema,
 } from '../validation/adminValidation.js'
@@ -241,3 +242,73 @@ export const revokeUserSession = async (
     next(error)
   }
 }
+
+/**
+ * Turns off two-factor sign-in for someone who's locked out — lost their
+ * phone and their backup codes. 2FA is optional for everyone, so this just
+ * returns the account to password-only; they can set it up again any time.
+ * Same step-up (the acting admin's own password) and audit trail as every
+ * other action on another account, and every session of theirs is signed
+ * out so the change can't be quietly ridden by whoever had the old device.
+ */
+export const resetUserTwoFactor = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = adminResetTwoFactorSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request',
+        errors: result.error.flatten().fieldErrors,
+      })
+    }
+
+    if (!(await confirmActingAdmin(req, result.data.confirmPassword))) {
+      await logAdminAudit({
+        actorId: req.user!.id,
+        action: 'STEP_UP_FAILED',
+        targetUserId: String(req.params.userId),
+        result: 'FAILURE',
+        detail: 'resetUserTwoFactor: wrong confirmation password',
+      })
+      return res.status(401).json({
+        success: false,
+        message: "That's not your current password",
+      })
+    }
+
+    const target = await User.findById(req.params.userId)
+    if (!target) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    target.totpEnabled = false
+    target.totpSecret = null
+    target.totpBackupCodeHashes = []
+    await target.save()
+
+    await Session.updateMany(
+      { userId: target.id, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    )
+
+    await logAdminAudit({
+      actorId: req.user!.id,
+      action: 'RESET_2FA',
+      targetUserId: target.id,
+      result: 'SUCCESS',
+      detail: `2FA turned off for ${target.username}`,
+    })
+
+    return res.json({
+      success: true,
+      message: `Two-step sign-in turned off for ${target.username}. They can sign in with just their password now.`,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+

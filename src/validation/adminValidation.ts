@@ -19,3 +19,8 @@ export const adminSetRoleSchema = z.object({
   role: z.enum(['ADMIN', 'USER']),
   confirmPassword: z.string().min(1, "Confirm it's you — enter your own password"),
 })
+
+/** Turning off someone's 2FA (they lost their phone and backup codes). */
+export const adminResetTwoFactorSchema = z.object({
+  confirmPassword: z.string().min(1, "Confirm it's you — enter your own password"),
+})

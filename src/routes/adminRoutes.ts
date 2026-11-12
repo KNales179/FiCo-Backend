@@ -5,6 +5,7 @@ import {
   setUserRole,
   listUserSessions,
   revokeUserSession,
+  resetUserTwoFactor,
 } from '../controllers/adminController.js'
 import { authenticate, requireAdmin } from '../middleware/authMiddleware.js'
 import { adminActionRateLimiter } from '../middleware/rateLimiter.js'
@@ -16,6 +17,7 @@ router.use(authenticate, requireAdmin)
 router.get('/users', listUsers)
 router.post('/users/:userId/password', adminActionRateLimiter, setUserPassword)
 router.post('/users/:userId/role', adminActionRateLimiter, setUserRole)
+router.post('/users/:userId/2fa/reset', adminActionRateLimiter, resetUserTwoFactor)
 router.get('/users/:userId/sessions', listUserSessions)
 router.post(
   '/users/:userId/sessions/:sessionId/revoke',
