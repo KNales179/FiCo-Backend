@@ -6,6 +6,7 @@ import {
   createFeedbackSchema,
   feedbackStatusSchema,
 } from '../validation/feedbackValidation.js'
+import { notifyUser } from '../services/notificationService.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 
 /** Anyone signed in — a bug report or a suggestion, not tied to one Finance. */
@@ -116,7 +117,26 @@ export const setFeedbackStatus = async (
     }
 
     feedback.status = result.data.status
+    const tellSender = feedback.status === 'RESOLVED' && !feedback.notifiedAt
+    if (tellSender) feedback.notifiedAt = new Date()
     await feedback.save()
+
+    // Let whoever sent it know it's done, pointing them at Updates.
+    if (tellSender) {
+      const excerpt = feedback.message.length > 90 ? `${feedback.message.slice(0, 90).trim()}…` : feedback.message
+      const suggestion = feedback.type === 'SUGGESTION'
+      await notifyUser({
+        userId: feedback.userId,
+        kind: 'FEEDBACK_DONE',
+        title: suggestion ? 'Your suggestion made it into Fico!' : 'The bug you reported is fixed',
+        body: suggestion
+          ? `“${excerpt}” — the Fico team marked your suggestion as done. Thank you! Go check Updates to see what’s new.`
+          : `“${excerpt}” — the Fico team marked this as fixed. Thanks for reporting it! Check Updates for the details.`,
+        link: '/updates',
+        senderName: 'Fico Admin Team',
+        senderId: req.user?.id ?? null,
+      })
+    }
 
     return res.json({ success: true, message: 'Updated' })
   } catch (error) {

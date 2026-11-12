@@ -16,6 +16,7 @@ import {
   sessionCookieOptions,
 } from '../utils/session.js'
 import { verifyTotp } from '../utils/totp.js'
+import { OAuth2Client } from 'google-auth-library'
 import { deleteAvatar, uploadAvatar } from '../services/attachmentStorage.js'
 import { generateToken, hashToken } from '../utils/token.js'
 import {
@@ -25,6 +26,7 @@ import {
 import {
   registerSchema,
   loginSchema,
+  googleAuthSchema,
   updateProfileSchema,
   deleteAccountSchema,
   changePasswordSchema,
@@ -34,7 +36,7 @@ import {
   resetPasswordSchema,
   notificationPreferencesSchema,
 } from '../validation/authValidation.js'
-import { AuthRequest } from '../middleware/authMiddleware.js'
+import { AuthRequest, isRestricted, noticeMessage, restrictedResponse } from '../middleware/authMiddleware.js'
 import { createPersonalSpace } from '../services/spaceService.js'
 import { consumePendingInvitations } from './spaceController.js'
 
@@ -90,6 +92,10 @@ const toPublicUser = (user: InstanceType<typeof User>) => ({
   username: user.username,
   email: user.email,
   displayName: user.displayName ?? null,
+  birthday: user.birthday?.month
+    ? { month: user.birthday.month, day: user.birthday.day, year: user.birthday.year ?? null }
+    : null,
+  paydays: user.paydays ?? [],
   role: user.role,
   totpEnabled: user.totpEnabled,
   emailVerified: user.emailVerified,
@@ -123,10 +129,14 @@ export const register = async (
     const result = registerSchema.safeParse(req.body)
 
     if (!result.success) {
+      // Say exactly what's wrong (and with which field) instead of a
+      // generic "invalid data" — people couldn't tell why sign-up failed.
+      const fieldErrors = result.error.flatten().fieldErrors
+      const first = Object.values(fieldErrors).flat().find(Boolean)
       return res.status(400).json({
         success: false,
-        message: 'Invalid registration data',
-        errors: result.error.flatten().fieldErrors,
+        message: first ?? 'Please check the highlighted fields',
+        errors: fieldErrors,
       })
     }
 
@@ -144,9 +154,15 @@ export const register = async (
     })
 
     if (existingUser) {
+      const emailTaken = existingUser.email === normalizedEmail
       return res.status(409).json({
         success: false,
-        message: 'Username or email is already in use',
+        message: emailTaken
+          ? 'That email already has a Fico account — try signing in, or reset your password.'
+          : 'That username is taken — try another one.',
+        errors: emailTaken
+          ? { email: ['That email already has a Fico account'] }
+          : { username: ['That username is taken'] },
       })
     }
 
@@ -220,6 +236,25 @@ export const login = async (
       password,
       user?.passwordHash ?? (await getDummyHash()),
     )
+
+    // Only once the password is right does Fico say *why* an account can't
+    // sign in — never to someone guessing.
+    if (user && passwordValid && isRestricted(user.restriction)) {
+      return res.status(403).json(restrictedResponse(user.restriction!))
+    }
+    if (user && passwordValid && user.status !== 'ACTIVE' && user.deletedByAdmin) {
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_DELETED',
+        message: noticeMessage('ACCOUNT_DELETED'),
+        notice: {
+          code: 'ACCOUNT_DELETED',
+          reason: user.deletedByAdmin.reason,
+          until: null,
+          at: user.deletedByAdmin.at.toISOString(),
+        },
+      })
+    }
 
     if (!user || user.status !== 'ACTIVE' || !passwordValid) {
       return res.status(401).json({
@@ -412,10 +447,11 @@ export const updateMe = async (
     const result = updateProfileSchema.safeParse(req.body)
 
     if (!result.success) {
+      const fieldErrors = result.error.flatten().fieldErrors
       return res.status(400).json({
         success: false,
-        message: 'Invalid profile data',
-        errors: result.error.flatten().fieldErrors,
+        message: Object.values(fieldErrors).flat().find(Boolean) ?? 'Invalid profile data',
+        errors: fieldErrors,
       })
     }
 
@@ -424,7 +460,9 @@ export const updateMe = async (
     if (
       updates.username === undefined &&
       updates.email === undefined &&
-      updates.displayName === undefined
+      updates.displayName === undefined &&
+      updates.birthday === undefined &&
+      updates.paydays === undefined
     ) {
       return res.status(400).json({
         success: false,
@@ -459,6 +497,16 @@ export const updateMe = async (
 
     if (updates.displayName !== undefined) {
       user.displayName = updates.displayName || undefined
+    }
+
+    if (updates.birthday !== undefined) {
+      user.birthday = updates.birthday
+        ? { month: updates.birthday.month, day: updates.birthday.day, year: updates.birthday.year ?? null }
+        : undefined
+    }
+
+    if (updates.paydays !== undefined) {
+      user.paydays = [...new Set(updates.paydays)].sort((a, b) => a - b)
     }
 
     if (updates.email) {
@@ -931,3 +979,126 @@ export const resetPassword = async (
     next(error)
   }
 }
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim() || ''
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null
+
+/** A free username from a Google name/email: letters, digits, underscores only. */
+const usernameFromGoogle = async (name: string | undefined, email: string): Promise<string> => {
+  const base =
+    (name || email.split('@')[0] || 'fico')
+      .normalize('NFKD')
+      .replace(/[^a-zA-Z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase()
+      .slice(0, 22) || 'fico'
+  const padded = base.length < 3 ? `${base}_user` : base
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = attempt === 0 ? padded : `${padded}_${crypto.randomInt(100, 9999)}`
+    if (!(await User.exists({ username: candidate }))) return candidate
+  }
+  return `fico_${crypto.randomBytes(5).toString('hex')}`
+}
+
+/**
+ * Sign in — or sign up — with Google. The browser hands over Google's ID
+ * token; it's verified against Google with this app's client id, then:
+ * an account already linked to that Google id signs in; otherwise one with
+ * the same (Google-verified) email gets linked and signs in; otherwise a
+ * new account is created (its email already verified by Google). Accounts
+ * with 2FA on still have to enter their code, exactly like a password
+ * sign-in. Disabled entirely until GOOGLE_CLIENT_ID is set.
+ */
+export const googleAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!googleClient) {
+      return res.status(503).json({ success: false, message: "Google sign-in isn't set up on this server yet" })
+    }
+    const result = googleAuthSchema.safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: 'Invalid Google sign-in request' })
+    }
+    const { credential, termsAccepted, deviceId } = result.data
+
+    let payload
+    try {
+      const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID })
+      payload = ticket.getPayload()
+    } catch {
+      return res.status(401).json({ success: false, message: 'Google sign-in failed — please try again' })
+    }
+    if (!payload?.sub || !payload.email) {
+      return res.status(401).json({ success: false, message: 'Google did not share an email address' })
+    }
+    if (!payload.email_verified) {
+      return res.status(401).json({ success: false, message: 'That Google account’s email isn’t verified yet' })
+    }
+
+    const email = payload.email.toLowerCase()
+    let user = await User.findOne({ googleId: payload.sub })
+    if (!user) user = await User.findOne({ email })
+
+    if (user) {
+      if (isRestricted(user.restriction)) {
+        return res.status(403).json(restrictedResponse(user.restriction!))
+      }
+      if (user.status !== 'ACTIVE') {
+        return res.status(401).json({ success: false, message: 'This account is disabled' })
+      }
+      let changed = false
+      if (!user.googleId) { user.googleId = payload.sub; changed = true }
+      if (!user.emailVerified) { user.emailVerified = true; changed = true }
+      if (changed) await user.save()
+    } else {
+      if (termsAccepted !== true) {
+        return res.status(400).json({
+          success: false,
+          code: 'TERMS_REQUIRED',
+          message: 'Please agree to the Terms & Conditions and Privacy Policy to create an account',
+        })
+      }
+      user = await User.create({
+        username: await usernameFromGoogle(payload.given_name || payload.name, email),
+        email,
+        // A Google-only account has no password; this random hash can't be
+        // guessed. "Forgot password" can set a real one later if wanted.
+        passwordHash: await hashPassword(crypto.randomBytes(32).toString('hex')),
+        googleId: payload.sub,
+        displayName: payload.name?.slice(0, 60) || undefined,
+        emailVerified: true,
+        status: 'ACTIVE',
+        termsAcceptedAt: new Date(),
+      })
+      await createPersonalSpace(user.id)
+      await consumePendingInvitations(user.id, email)
+    }
+
+    if (user.totpEnabled) {
+      const pendingToken = generateSessionId()
+      await TwoFactorChallenge.create({
+        userId: user.id,
+        tokenHash: hashSessionId(pendingToken),
+        deviceId,
+        userAgent: userAgentOf(req),
+        expiresAt: new Date(Date.now() + TWO_FACTOR_CHALLENGE_MINUTES * 60 * 1000),
+      })
+      return res.json({
+        success: true,
+        requiresTwoFactor: true,
+        pendingToken,
+        message: 'Enter your authenticator code to finish signing in',
+      })
+    }
+
+    const { expiresAt } = await createSession(user.id, res, deviceId, userAgentOf(req))
+    return res.json({
+      success: true,
+      message: 'Signed in with Google',
+      user: toPublicUser(user),
+      session: { expiresAt: expiresAt.toISOString() },
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+

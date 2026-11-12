@@ -53,6 +53,8 @@ export const loginSchema = z.object({
   deviceId: deviceIdSchema,
 })
 
+const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+
 export const updateProfileSchema = z.object({
   username: z
     .string()
@@ -76,6 +78,36 @@ export const updateProfileSchema = z.object({
     .string()
     .trim()
     .max(60, 'Display name must not exceed 60 characters')
+    .optional(),
+
+  // null clears it.
+  birthday: z
+    .object({
+      month: z.number().int().min(1).max(12),
+      day: z.number().int().min(1).max(31),
+      year: z
+        .number()
+        .int()
+        .min(1900, 'That year looks too early')
+        .max(new Date().getFullYear(), "That year hasn't happened yet")
+        .nullable()
+        .optional(),
+    })
+    .refine(
+      // Feb 29 is a real birthday; otherwise the day must exist in that month.
+      (b) => b.day <= [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][b.month - 1],
+      { message: "That day doesn't exist in that month", path: ['day'] },
+    )
+    .refine((b) => !(b.year && b.month === 2 && b.day === 29 && !isLeapYear(b.year)), {
+      message: `February 29 didn't happen that year`,
+      path: ['day'],
+    })
+    .nullable()
+    .optional(),
+
+  paydays: z
+    .array(z.number().int().min(1).max(31))
+    .max(2, 'Up to two paydays')
     .optional(),
 })
 
@@ -137,3 +169,13 @@ export const resetPasswordSchema = z.object({
     .min(8, 'New password must be at least 8 characters')
     .max(128, 'New password must not exceed 128 characters'),
 })
+
+/** Sign in / sign up with Google — the ID token from Google's button. */
+export const googleAuthSchema = z.object({
+  credential: z.string().min(20, 'Missing Google credential').max(4096),
+  // Shown beside the Google button ("By continuing you agree to…") — only
+  // needed when this creates a brand-new account.
+  termsAccepted: z.boolean().optional(),
+  deviceId: deviceIdSchema,
+})
+

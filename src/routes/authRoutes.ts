@@ -3,6 +3,7 @@ import { MulterError } from 'multer'
 import { MAX_AVATAR_BYTES, uploadAvatar as uploadAvatarMiddleware } from '../middleware/upload.js'
 import {
   register,
+  googleAuth,
   login,
   verifyTwoFactorLogin,
   logout,
@@ -46,6 +47,13 @@ router.post(
   '/login',
   loginRateLimiter,
   login,
+)
+
+// Sign in / sign up with Google (off until GOOGLE_CLIENT_ID is set).
+router.post(
+  '/google',
+  loginRateLimiter,
+  googleAuth,
 )
 
 router.post(

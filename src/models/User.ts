@@ -6,8 +6,25 @@ export interface IUser extends Document {
   username: string
   email: string
   passwordHash: string
+  /** Google account id ("sub"), once the account has signed in with Google. */
+  googleId?: string | null
   displayName?: string
+  /** Optional, typed in by the person. Year is optional too — some people
+   *  would rather not say. Used for a birthday greeting and a budget nudge. */
+  birthday?: { month: number; day: number; year?: number | null } | null
+  /** Days of the month they usually get paid (1–31; 31 = last day of the
+   *  month), at most two — e.g. [15, 31] for the common kinsenas pay. */
+  paydays: number[]
   status: 'ACTIVE' | 'DISABLED'
+  /** Set by an admin: can't sign in until `until` (null = until lifted). */
+  restriction?: {
+    reason: string
+    until: Date | null
+    byId: mongoose.Types.ObjectId
+    at: Date
+  } | null
+  /** Why an admin deleted (disabled) this account, if one did. */
+  deletedByAdmin?: { reason: string; byId: mongoose.Types.ObjectId; at: Date } | null
   /** System-wide role — separate from a Finance's own OWNER/MEMBER (Membership).
    *  Only an ADMIN can manage other users' accounts. */
   role: UserRole
@@ -77,6 +94,14 @@ const userSchema = new Schema<IUser>(
       required: true,
     },
 
+    // Set when the account signs in with Google. Sparse so the many
+    // password-only accounts (no googleId) don't collide on the index.
+    googleId: {
+      type: String,
+      default: undefined,
+      index: { unique: true, sparse: true },
+    },
+
     displayName: {
       type: String,
       trim: true,
@@ -84,10 +109,52 @@ const userSchema = new Schema<IUser>(
       default: null,
     },
 
+    birthday: {
+      type: new Schema(
+        {
+          month: { type: Number, min: 1, max: 12, required: true },
+          day: { type: Number, min: 1, max: 31, required: true },
+          year: { type: Number, min: 1900, max: 2100, default: null },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+
+    paydays: {
+      type: [{ type: Number, min: 1, max: 31 }],
+      default: [],
+    },
+
     status: {
       type: String,
       enum: ['ACTIVE', 'DISABLED'],
       default: 'ACTIVE',
+    },
+
+    restriction: {
+      type: new Schema(
+        {
+          reason: { type: String, required: true, maxlength: 500 },
+          until: { type: Date, default: null },
+          byId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+
+    deletedByAdmin: {
+      type: new Schema(
+        {
+          reason: { type: String, required: true, maxlength: 500 },
+          byId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
 
     role: {

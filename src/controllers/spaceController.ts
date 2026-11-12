@@ -71,6 +71,8 @@ export const listMySpaces = async (
 }
 
 /** POST /api/spaces — create a FAMILY space owned by the caller. */
+export const MAX_OWNED_FINANCES = 3
+
 export const createSpace = async (
   req: AuthRequest,
   res: Response,
@@ -87,6 +89,17 @@ export const createSpace = async (
     }
 
     const userId = req.user!.id
+
+    // Up to three Finances of your own (personal one included); Finances
+    // other people share with you don't count.
+    const owned = await Space.countDocuments({ ownerId: userId, deletedAt: null })
+    if (owned >= MAX_OWNED_FINANCES) {
+      return res.status(409).json({
+        success: false,
+        code: 'FINANCE_LIMIT',
+        message: `You already have ${MAX_OWNED_FINANCES} Finances of your own — that's the most for now. Rename or reuse one instead.`,
+      })
+    }
 
     const space = await Space.create({
       name: result.data.name,

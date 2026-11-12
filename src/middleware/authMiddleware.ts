@@ -27,6 +27,31 @@ export interface AuthRequest extends Request {
   }
 }
 
+/** What each admin sign-out reason means, in words. */
+export const noticeMessage = (code: string): string =>
+  ({
+    ADMIN_SIGN_OUT: 'You have been signed out by the Fico Admin Team',
+    ACCOUNT_RESTRICTED: 'Your account has been restricted on Fico',
+    ACCOUNT_DELETED: 'Your Fico account has been deleted by the Fico Admin Team',
+    ADMIN_PASSWORD_RESET: 'An admin changed your password, so you were signed out',
+    ADMIN_2FA_RESET: 'An admin turned off your two-step sign-in, so you were signed out',
+  })[code] ?? 'You have been signed out'
+
+export const isRestricted = (r: { until?: Date | null } | null | undefined): boolean =>
+  Boolean(r && (!r.until || r.until.getTime() > Date.now()))
+
+export const restrictedResponse = (r: { reason: string; until?: Date | null; at: Date }) => ({
+  success: false,
+  code: 'ACCOUNT_RESTRICTED',
+  message: noticeMessage('ACCOUNT_RESTRICTED'),
+  notice: {
+    code: 'ACCOUNT_RESTRICTED',
+    reason: r.reason,
+    until: r.until?.toISOString() ?? null,
+    at: r.at.toISOString(),
+  },
+})
+
 const SESSION_DURATION_DAYS =
   Number(process.env.SESSION_DURATION_DAYS) || 7
 
@@ -63,6 +88,18 @@ export const authenticate = async (
     if (!session) {
       res.clearCookie('fico_session', sessionCookieOptions())
 
+      // Ended by an admin? Say so (and why) — the app shows it as a pop-up.
+      const ended = await Session.findOne({ sessionHash, revokedNotice: { $ne: null } }).select('revokedNotice')
+      if (ended?.revokedNotice) {
+        const n = ended.revokedNotice
+        return res.status(401).json({
+          success: false,
+          code: n.code,
+          message: noticeMessage(n.code),
+          notice: { code: n.code, reason: n.reason, until: n.until?.toISOString() ?? null, at: n.at.toISOString() },
+        })
+      }
+
       return res.status(401).json({
         success: false,
         message: 'Session expired or invalid',
@@ -70,6 +107,12 @@ export const authenticate = async (
     }
 
     const user = await User.findById(session.userId)
+
+    if (user && isRestricted(user.restriction)) {
+      await Session.updateOne({ _id: session._id }, { $set: { revokedAt: new Date() } })
+      res.clearCookie('fico_session', sessionCookieOptions())
+      return res.status(403).json(restrictedResponse(user.restriction!))
+    }
 
     if (!user || user.status !== 'ACTIVE') {
       await Session.updateOne(

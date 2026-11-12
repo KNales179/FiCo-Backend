@@ -10,6 +10,9 @@ export interface ISession extends Document {
   expiresAt: Date
   lastUsedAt: Date
   revokedAt?: Date
+  /** Why it was ended, when an admin (or an admin action) ended it — so the
+   *  device can be told on its next request instead of a bare "expired". */
+  revokedNotice?: { code: string; reason: string | null; until: Date | null; at: Date } | null
   createdAt: Date
   updatedAt: Date
 }
@@ -52,6 +55,19 @@ const sessionSchema = new Schema<ISession>(
 
     revokedAt: {
       type: Date,
+      default: null,
+    },
+
+    revokedNotice: {
+      type: new Schema(
+        {
+          code: { type: String, required: true },
+          reason: { type: String, default: null, maxlength: 500 },
+          until: { type: Date, default: null },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
       default: null,
     },
   },

@@ -12,9 +12,13 @@ export const loginRateLimiter = rateLimit({
   },
 })
 
+// Counts accounts actually created, not attempts: a form rejected for a
+// taken username or a short password mustn't lock a person (or the rest of
+// their household, on the same Wi-Fi) out for an hour.
 export const registerRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 5,
+  limit: 10,
+  skipFailedRequests: true,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: {

@@ -16,6 +16,11 @@ export type AdminAuditAction =
   | 'SET_ROLE'
   | 'REVOKE_SESSION'
   | 'RESET_2FA'
+  | 'SEND_NOTICE'
+  | 'SIGN_OUT_ALL'
+  | 'RESTRICT'
+  | 'UNRESTRICT'
+  | 'DELETE_USER'
   | 'STEP_UP_FAILED'
 
 export interface IAdminAuditLog extends Document {

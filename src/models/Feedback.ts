@@ -10,6 +10,8 @@ export interface IFeedback extends Document {
   type: FeedbackType
   message: string
   status: FeedbackStatus
+  /** When the sender was told it's done — so re-resolving never notifies twice. */
+  notifiedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -39,6 +41,7 @@ const feedbackSchema = new Schema<IFeedback>(
       enum: ['OPEN', 'RESOLVED'],
       default: 'OPEN',
     },
+    notifiedAt: { type: Date, default: null },
   },
   { timestamps: true },
 )

@@ -9,6 +9,7 @@ import {
 } from '../validation/adminValidation.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { logAdminAudit } from '../services/adminAuditService.js'
+import { notifyUser, signOutEverywhere } from '../services/notificationService.js'
 
 /**
  * Re-checks the *acting admin's own* current password — every sensitive
@@ -44,6 +45,8 @@ export const listUsers = async (
         role: u.role,
         totpEnabled: u.totpEnabled,
         emailVerified: u.emailVerified,
+        avatarUrl: u.avatarUrl ?? null,
+        restricted: Boolean(u.restriction && (!u.restriction.until || u.restriction.until.getTime() > Date.now())),
         createdAt: u.createdAt.toISOString(),
         isSelf: u.id === req.user?.id,
       })),
@@ -92,10 +95,10 @@ export const setUserPassword = async (
 
     // A password set out from under someone is exactly when every other
     // device should have to sign in again.
-    await Session.updateMany(
-      { userId: target.id },
-      { $set: { revokedAt: new Date() } },
-    )
+    await signOutEverywhere(target.id, {
+      code: 'ADMIN_PASSWORD_RESET',
+      reason: result.data.reason || 'An admin set a new password for your account. Ask them for it, or use “Forgot password” to choose your own.',
+    })
 
     await logAdminAudit({
       actorId: req.user!.id,
@@ -160,6 +163,20 @@ export const setUserRole = async (
 
     target.role = result.data.role
     await target.save()
+
+    await notifyUser({
+      userId: target.id,
+      kind: 'ADMIN_ACTION',
+      title: result.data.role === 'ADMIN' ? 'You’re now a Fico admin' : 'Your admin access was removed',
+      body:
+        result.data.reason ||
+        (result.data.role === 'ADMIN'
+          ? 'You can now manage accounts and read reports from the Admin page in the menu. Use it kindly.'
+          : 'Your account works exactly as before — just without the Admin page.'),
+      senderName: 'Fico Admin Team',
+      senderId: req.user!.id,
+      popup: true,
+    })
 
     await logAdminAudit({
       actorId: req.user!.id,
@@ -227,6 +244,7 @@ export const revokeUserSession = async (
     }
 
     session.revokedAt = new Date()
+    session.revokedNotice = { code: 'ADMIN_SIGN_OUT', reason: null, until: null, at: new Date() }
     await session.save()
 
     await logAdminAudit({
@@ -290,10 +308,10 @@ export const resetUserTwoFactor = async (
     target.totpBackupCodeHashes = []
     await target.save()
 
-    await Session.updateMany(
-      { userId: target.id, revokedAt: null },
-      { $set: { revokedAt: new Date() } },
-    )
+    await signOutEverywhere(target.id, {
+      code: 'ADMIN_2FA_RESET',
+      reason: result.data.reason || 'Two-step sign-in was turned off for your account, so you can sign in with just your password. You can turn it back on any time in Account.',
+    })
 
     await logAdminAudit({
       actorId: req.user!.id,
