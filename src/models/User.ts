@@ -23,6 +23,9 @@ export interface IUser extends Document {
     byId: mongoose.Types.ObjectId
     at: Date
   } | null
+  /** Short-lived token (hashed) letting a restricted person appeal from the sign-in screen. */
+  appealTokenHash?: string | null
+  appealTokenExpiresAt?: Date | null
   /** Why an admin deleted (disabled) this account, if one did. */
   deletedByAdmin?: { reason: string; byId: mongoose.Types.ObjectId; at: Date } | null
   /** System-wide role — separate from a Finance's own OWNER/MEMBER (Membership).
@@ -144,6 +147,9 @@ const userSchema = new Schema<IUser>(
       ),
       default: null,
     },
+
+    appealTokenHash: { type: String, default: null, index: { sparse: true } },
+    appealTokenExpiresAt: { type: Date, default: null },
 
     deletedByAdmin: {
       type: new Schema(

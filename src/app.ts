@@ -11,6 +11,7 @@ import adminRoutes from './routes/adminRoutes.js'
 import pushRoutes from './routes/pushRoutes.js'
 import feedbackRoutes from './routes/feedbackRoutes.js'
 import notificationRoutes from './routes/notificationRoutes.js'
+import appealRoutes from './routes/appealRoutes.js'
 
 const app = express()
 
@@ -77,6 +78,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/push', pushRoutes)
 app.use('/api/feedback', feedbackRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/appeals', appealRoutes)
 
 app.use(notFound)
 app.use(errorHandler)

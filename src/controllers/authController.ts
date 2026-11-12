@@ -36,7 +36,8 @@ import {
   resetPasswordSchema,
   notificationPreferencesSchema,
 } from '../validation/authValidation.js'
-import { AuthRequest, isRestricted, noticeMessage, restrictedResponse } from '../middleware/authMiddleware.js'
+import { AuthRequest, isRestricted, noticeMessage } from '../middleware/authMiddleware.js'
+import { restrictedLoginResponse } from './appealController.js'
 import { createPersonalSpace } from '../services/spaceService.js'
 import { consumePendingInvitations } from './spaceController.js'
 
@@ -240,7 +241,7 @@ export const login = async (
     // Only once the password is right does Fico say *why* an account can't
     // sign in — never to someone guessing.
     if (user && passwordValid && isRestricted(user.restriction)) {
-      return res.status(403).json(restrictedResponse(user.restriction!))
+      return res.status(403).json(await restrictedLoginResponse(user))
     }
     if (user && passwordValid && user.status !== 'ACTIVE' && user.deletedByAdmin) {
       return res.status(403).json({
@@ -1040,7 +1041,7 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
 
     if (user) {
       if (isRestricted(user.restriction)) {
-        return res.status(403).json(restrictedResponse(user.restriction!))
+        return res.status(403).json(await restrictedLoginResponse(user))
       }
       if (user.status !== 'ACTIVE') {
         return res.status(401).json({ success: false, message: 'This account is disabled' })

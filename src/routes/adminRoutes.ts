@@ -15,6 +15,7 @@ import {
   unrestrictUser,
   deleteUser,
 } from '../controllers/adminUserController.js'
+import { listAppeals, getAppeal, decideAppeal } from '../controllers/appealController.js'
 import { authenticate, requireAdmin } from '../middleware/authMiddleware.js'
 import { adminActionRateLimiter } from '../middleware/rateLimiter.js'
 
@@ -22,6 +23,9 @@ const router = Router()
 
 router.use(authenticate, requireAdmin)
 
+router.get('/appeals', listAppeals)
+router.get('/appeals/:appealId', getAppeal)
+router.post('/appeals/:appealId/decide', adminActionRateLimiter, decideAppeal)
 router.get('/users', listUsers)
 router.get('/users/:userId', getUserProfile)
 router.post('/users/:userId/notice', adminActionRateLimiter, sendNotice)
