@@ -33,9 +33,9 @@ const SESSION_DURATION_DAYS =
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * Validates the session cookie, loads the user, and slides the session's
- * expiry forward when it is past the halfway mark — a lightweight refresh so an
- * actively used device is not logged out on a fixed schedule (Architecture §41).
+ * Validates the session cookie, loads the user, and rolls the session's
+ * expiry forward on use, so an actively used device is never logged out on
+ * a fixed schedule — only after a full idle window (Architecture §41).
  */
 export const authenticate = async (
   req: AuthRequest,
@@ -91,8 +91,10 @@ export const authenticate = async (
 
     const updates: Record<string, Date> = {}
 
-    // Sliding renewal once the session is more than halfway to expiry.
-    if (remainingMs < fullWindowMs / 2) {
+    // Rolling expiry: any use pushes the expiry back to a full window from
+    // now, so a session only ends after SESSION_DURATION_DAYS of *not*
+    // using Fico. Written at most once an hour to keep DB writes down.
+    if (remainingMs < fullWindowMs - 60 * 60 * 1000) {
       const nextExpiry = new Date(now + fullWindowMs)
       updates.expiresAt = nextExpiry
       session.expiresAt = nextExpiry
