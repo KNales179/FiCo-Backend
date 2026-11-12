@@ -68,6 +68,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     title: z.string().min(1).max(120),
     status: z.enum(['ACTIVE', 'COMPLETED', 'CANCELLED']),
     plannedBudgetMinor: z.number().int().nullable().optional(),
+    archived: z.boolean().optional(),
     visibility,
     createdBy: id,
   }),
