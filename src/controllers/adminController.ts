@@ -152,6 +152,11 @@ export const setUserRole = async (
       return res.status(404).json({ success: false, message: 'User not found' })
     }
 
+    // The Fico Owner's admin access is theirs to keep — no other admin can remove it.
+    if (target.badges?.includes('FICO_OWNER') && target.id !== req.user!.id) {
+      return res.status(403).json({ success: false, message: 'The Fico Owner’s admin access can’t be changed' })
+    }
+
     if (target.role === 'ADMIN' && result.data.role === 'USER') {
       const adminCount = await User.countDocuments({ role: 'ADMIN' })
       if (adminCount <= 1) {

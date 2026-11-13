@@ -330,11 +330,21 @@ export const setUserBadge = async (req: AuthRequest, res: Response, next: NextFu
     if (!parsed.success) return res.status(400).json({ success: false, message: 'Pick a badge' })
     const { badge, on } = parsed.data
 
+    // There is one Fico Owner. The badge can be taken only while nobody holds
+    // it, and only by an admin for their own account; after that nobody — the
+    // Fico Owner included — can give it to someone else. Only its holder can
+    // take it off (their own).
     if (badge === 'FICO_OWNER') {
-      const me = await User.findById(req.user!.id).select('badges')
-      const anyOwner = await User.exists({ badges: 'FICO_OWNER' })
-      if (anyOwner && !me?.badges?.includes('FICO_OWNER')) {
-        return res.status(403).json({ success: false, message: 'Only a Fico Owner can give or remove the Fico Owner badge' })
+      const self = String(req.params.userId) === req.user!.id
+      const holder = await User.findOne({ badges: 'FICO_OWNER' }).select('_id')
+      if (on && (holder || !self)) {
+        return res.status(403).json({
+          success: false,
+          message: holder ? 'There’s already a Fico Owner — nobody can give that badge to someone else' : 'The Fico Owner badge can only be taken for your own account',
+        })
+      }
+      if (!on && !(self && holder && String(holder._id) === req.user!.id)) {
+        return res.status(403).json({ success: false, message: 'Only the Fico Owner can take off the Fico Owner badge' })
       }
     }
 

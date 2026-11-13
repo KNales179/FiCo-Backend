@@ -50,6 +50,8 @@ router.post(
   leaveSpace,
 )
 
+// People: the owner and admins invite and remove members; only the owner
+// sets roles and hands over ownership.
 router.get(
   '/:spaceId/members',
   requireSpaceMember('VIEWER'),
@@ -62,7 +64,7 @@ router.patch(
 )
 router.post(
   '/:spaceId/members',
-  requireSpaceMember('OWNER'),
+  requireSpaceMember('ADMIN'),
   addMember,
 )
 router.post(
@@ -72,23 +74,23 @@ router.post(
 )
 router.delete(
   '/:spaceId/members/:userId',
-  requireSpaceMember('OWNER'),
+  requireSpaceMember('ADMIN'),
   removeMember,
 )
 
 router.get(
   '/:spaceId/invitations',
-  requireSpaceMember('OWNER'),
+  requireSpaceMember('ADMIN'),
   listInvitations,
 )
 router.post(
   '/:spaceId/invitations',
-  requireSpaceMember('OWNER'),
+  requireSpaceMember('ADMIN'),
   createInvitation,
 )
 router.delete(
   '/:spaceId/invitations/:invitationId',
-  requireSpaceMember('OWNER'),
+  requireSpaceMember('ADMIN'),
   revokeInvitation,
 )
 

@@ -760,6 +760,15 @@ export const removeMember = async (
       })
     }
 
+    // Nobody removes the owner. An admin removes members and viewers, not
+    // other admins — that's the owner's call.
+    if (membership.role === 'OWNER') {
+      return res.status(403).json({ success: false, message: 'The owner can’t be removed — ownership has to be handed over first' })
+    }
+    if (req.membership!.role !== 'OWNER' && membership.role === 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'Only the owner can remove an admin' })
+    }
+
     membership.status = 'REVOKED'
     await membership.save()
 
