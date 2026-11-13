@@ -9,7 +9,10 @@ export type AttachmentEntityType =
 export interface IAttachment extends Document {
   spaceId: mongoose.Types.ObjectId
   entityType: AttachmentEntityType
-  entityId: mongoose.Types.ObjectId
+  /** The record's id as the app knows it (a client id, not a Mongo ObjectId). */
+  entityId: string
+  /** The app's own id for this attachment — makes a retried upload a no-op. */
+  clientId?: string | null
   /** Original filename — for display only, never used as a path (Architecture §30). */
   fileName: string
   mimeType: string
@@ -43,9 +46,11 @@ const attachmentSchema = new Schema<IAttachment>(
       required: true,
     },
     entityId: {
-      type: Schema.Types.ObjectId,
+      type: String,
       required: true,
+      maxlength: 120,
     },
+    clientId: { type: String, default: null, maxlength: 120 },
     fileName: { type: String, required: true, maxlength: 260 },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true },
@@ -62,6 +67,10 @@ const attachmentSchema = new Schema<IAttachment>(
 )
 
 attachmentSchema.index({ entityType: 1, entityId: 1 })
+attachmentSchema.index(
+  { spaceId: 1, clientId: 1 },
+  { unique: true, partialFilterExpression: { clientId: { $type: 'string' } } },
+)
 
 const Attachment = mongoose.model<IAttachment>(
   'Attachment',

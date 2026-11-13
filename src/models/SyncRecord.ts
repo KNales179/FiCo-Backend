@@ -15,6 +15,10 @@ export interface ISyncRecord extends Document {
   payload: Record<string, unknown>
   /** Monotonic version, bumped on every accepted change (conflict detection). */
   version: number
+  /** Per field: the `updatedAt` of the edit that last set it — so two
+   *  people changing *different* fields of a record both keep their edit,
+   *  and only the same field is decided by "newest wins". */
+  fieldUpdatedAt?: Record<string, string>
   deletedAt?: Date | null
   updatedAt: Date
   updatedBy: mongoose.Types.ObjectId
@@ -33,6 +37,7 @@ const syncRecordSchema = new Schema<ISyncRecord>(
     clientId: { type: String, required: true },
     payload: { type: Schema.Types.Mixed, required: true },
     version: { type: Number, default: 1 },
+    fieldUpdatedAt: { type: Schema.Types.Mixed, default: {} },
     deletedAt: { type: Date, default: null },
     updatedBy: {
       type: Schema.Types.ObjectId,

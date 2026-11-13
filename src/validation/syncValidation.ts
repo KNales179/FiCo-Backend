@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SYNC_LIST_ITEM_NAME, SYNC_LIST_LIMIT, SYNC_TEXT_LIMITS as L } from './syncLimits.js'
 
 /**
  * Lightweight structural checks on sync payloads. This is not full domain
@@ -23,7 +24,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
   account: z.object({
     ...base,
     spaceId: id,
-    name: z.string().min(1).max(60),
+    name: z.string().min(1).max(L.account.name),
     type: z.enum(['CASH', 'BANK', 'EWALLET', 'SAVINGS', 'OTHER']),
     currency: z.string().length(3),
     openingBalanceMinor: minorInt,
@@ -37,7 +38,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
     amountMinor: nonNegInt.refine((n) => n > 0, 'amount must be > 0'),
     currency: z.string().length(3),
-    title: z.string().min(1).max(120),
+    title: z.string().min(1).max(L.transaction.title),
     accountId: id,
     destinationAccountId: z.string().nullable().optional(),
     // Cross-currency TRANSFER only — how much lands in the destination
@@ -46,7 +47,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     exchangeRate: z.number().positive().nullable().optional(),
     occurredAt: iso,
     categoryId: z.string().nullable().optional(),
-    categoryName: z.string().max(60).nullable().optional(),
+    categoryName: z.string().max(L.transaction.categoryName).nullable().optional(),
     sourceType: z.string().optional(),
     sourceId: z.string().nullable().optional(),
     visibility,
@@ -55,7 +56,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
   category: z.object({
     ...base,
     spaceId: id,
-    name: z.string().min(1).max(40),
+    name: z.string().min(1).max(L.category.name),
     normalizedName: z.string().min(1),
     kind: z.enum(['EXPENSE', 'INCOME']),
     archived: z.boolean(),
@@ -65,7 +66,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
   shoppingList: z.object({
     ...base,
     spaceId: id,
-    title: z.string().min(1).max(120),
+    title: z.string().min(1).max(L.shoppingList.title),
     status: z.enum(['ACTIVE', 'COMPLETED', 'CANCELLED']),
     plannedBudgetMinor: z.number().int().nullable().optional(),
     archived: z.boolean().optional(),
@@ -76,7 +77,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     ...base,
     spaceId: id,
     shoppingListId: id,
-    name: z.string().min(1).max(120),
+    name: z.string().min(1).max(L.shoppingItem.name),
     plannedPriceMinor: z.number().int().nullable().optional(),
     actualPriceMinor: z.number().int().nullable().optional(),
     // A whole piece count, or a weight in kg (decimals — 0.756kg of pork).
@@ -92,7 +93,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     ...base,
     spaceId: id,
     normalizedName: z.string().min(1),
-    displayName: z.string().min(1).max(120),
+    displayName: z.string().min(1).max(L.itemProfile.displayName),
     categoryId: z.string().nullable().optional(),
   }),
   priceHistory: z.object({
@@ -101,14 +102,14 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     amountMinor: nonNegInt,
     purchasedAt: iso,
     transactionId: z.string().nullable().optional(),
-    name: z.string().max(120).nullable().optional(),
+    name: z.string().max(L.priceHistory.name).nullable().optional(),
     quantity: z.number().positive().max(100000).nullable().optional(),
-    categoryName: z.string().max(80).nullable().optional(),
+    categoryName: z.string().max(L.priceHistory.categoryName).nullable().optional(),
   }),
   bill: z.object({
     ...base,
     spaceId: id,
-    name: z.string().min(1).max(80),
+    name: z.string().min(1).max(L.bill.name),
     recurrence: z.enum(['MONTHLY', 'YEARLY', 'SCHEDULED', 'NONE']),
     billType: z.enum(['FIXED', 'VARIABLE']),
     expectedAmountMinor: z.number().int().nullable().optional(),
@@ -156,9 +157,9 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     expectedMinor: minorInt,
     actualMinor: minorInt,
     differenceMinor: minorInt,
-    note: z.string().max(500).nullable().optional(),
+    note: z.string().max(L.reconciliation.note).nullable().optional(),
     status: z.enum(['OPEN', 'RESOLVED']),
-    resolvedNote: z.string().max(500).nullable().optional(),
+    resolvedNote: z.string().max(L.reconciliation.resolvedNote).nullable().optional(),
     resolvedAt: z.string().nullable().optional(),
     createdBy: id,
   }),
@@ -171,22 +172,22 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
       .array(
         z.object({
           id: z.string().min(1),
-          name: z.string().min(1).max(80),
+          name: z.string().min(1).max(SYNC_LIST_ITEM_NAME),
           amountMinor: nonNegInt,
         }),
       )
-      .max(50),
+      .max(SYNC_LIST_LIMIT),
     weeklyStaples: z
       .array(
         z.object({
           id: z.string().min(1),
-          name: z.string().min(1).max(80),
+          name: z.string().min(1).max(SYNC_LIST_ITEM_NAME),
           amountMinor: nonNegInt,
         }),
       )
-      .max(50)
+      .max(SYNC_LIST_LIMIT)
       .optional(),
-    includedOverdueBillIds: z.array(z.string().min(1)).max(50).optional(),
+    includedOverdueBillIds: z.array(z.string().min(1)).max(SYNC_LIST_LIMIT).optional(),
     billAmountOverrides: z.record(z.string().min(1), nonNegInt).optional(),
     createdBy: id,
   }),
@@ -226,6 +227,8 @@ export const pushSchema = z.object({
         payload: z.unknown(),
         clientVersion: z.number().int().min(1).optional(),
         baseVersion: z.number().int().min(0).optional(),
+        /** The fields this edit actually changed — merged field by field. */
+        changedFields: z.array(z.string().min(1).max(60)).max(100).optional(),
       }),
     )
     .max(500),

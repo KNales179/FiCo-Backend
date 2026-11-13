@@ -42,7 +42,11 @@ import { createPersonalSpace } from '../services/spaceService.js'
 import { consumePendingInvitations } from './spaceController.js'
 
 const SESSION_DURATION_DAYS =
-  Number(process.env.SESSION_DURATION_DAYS) || 7
+  // 30 days without contacting the server: generous enough for someone
+  // using Fico offline for weeks (out in the province, no data) without
+  // having to sign in again — and if it still runs out, their offline
+  // changes are kept on the device and sync after they sign back in.
+  Number(process.env.SESSION_DURATION_DAYS) || 30
 /** How long a password-checked-out-but-2FA-pending login stays valid. */
 const TWO_FACTOR_CHALLENGE_MINUTES = 5
 const EMAIL_VERIFICATION_HOURS = 24

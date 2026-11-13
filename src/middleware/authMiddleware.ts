@@ -53,7 +53,11 @@ export const restrictedResponse = (r: { reason: string; until?: Date | null; at:
 })
 
 const SESSION_DURATION_DAYS =
-  Number(process.env.SESSION_DURATION_DAYS) || 7
+  // 30 days without contacting the server: generous enough for someone
+  // using Fico offline for weeks (out in the province, no data) without
+  // having to sign in again — and if it still runs out, their offline
+  // changes are kept on the device and sync after they sign back in.
+  Number(process.env.SESSION_DURATION_DAYS) || 30
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

@@ -9,6 +9,7 @@ import ElectricityRecord from '../models/ElectricityRecord.js'
 import ShoppingItem from '../models/ShoppingItem.js'
 import Transaction from '../models/Transaction.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
+import SyncRecord from '../models/SyncRecord.js'
 import {
   deleteReceipt,
   isStorageConfigured,
@@ -16,8 +17,17 @@ import {
   uploadReceipt,
 } from '../services/attachmentStorage.js'
 
+const signedUrl = (a: IAttachment): string | null => {
+  try {
+    return receiptUrl(a.storageKey, a.resourceType)
+  } catch {
+    return null
+  }
+}
+
 const serialize = (a: IAttachment) => ({
   id: String(a._id),
+  clientId: a.clientId ?? null,
   entityType: a.entityType,
   entityId: String(a.entityId),
   fileName: a.fileName,
@@ -25,7 +35,17 @@ const serialize = (a: IAttachment) => ({
   size: a.size,
   createdBy: String(a.createdBy),
   createdAt: a.createdAt,
+  /** A short-lived signed link to view it. */
+  url: signedUrl(a),
 })
+
+/** The app's record types, as they're stored in the synced-record collection. */
+const SYNC_TYPE: Record<AttachmentEntityType, string> = {
+  TRANSACTION: 'transaction',
+  SHOPPING_ITEM: 'shoppingItem',
+  BILL_PAYMENT: 'billPayment',
+  ELECTRICITY_RECORD: 'electricityRecord',
+}
 
 const objectId = (value: string | string[]) => {
   const id = String(value)
@@ -38,6 +58,16 @@ const entityExistsInSpace = async (
   entityType: AttachmentEntityType,
   entityId: string,
 ): Promise<boolean> => {
+  // Records made in the app live as synced records, keyed by the app's id.
+  const synced = await SyncRecord.exists({
+    spaceId,
+    entityType: SYNC_TYPE[entityType],
+    clientId: entityId,
+    deletedAt: null,
+  })
+  if (synced) return true
+
+  // Older server-side records.
   if (!mongoose.Types.ObjectId.isValid(entityId)) return false
   const q = { _id: entityId, spaceId, deletedAt: null }
 
@@ -85,7 +115,8 @@ export const uploadAttachment = async (
     const entityType = String(
       req.body?.entityType ?? '',
     ) as AttachmentEntityType
-    const entityId = String(req.body?.entityId ?? '')
+    const entityId = String(req.body?.entityId ?? '').slice(0, 120)
+    const clientId = req.body?.clientId ? String(req.body.clientId).slice(0, 120) : null
 
     const allowed: AttachmentEntityType[] = [
       'TRANSACTION',
@@ -94,13 +125,23 @@ export const uploadAttachment = async (
       'ELECTRICITY_RECORD',
     ]
 
-    if (
-      !allowed.includes(entityType) ||
-      !(await entityExistsInSpace(req.space!._id, entityType, entityId))
-    ) {
+    if (!allowed.includes(entityType)) {
+      return res.status(400).json({ success: false, message: 'Unknown record type' })
+    }
+
+    // The same photo sent again (a retry): hand back what was saved.
+    if (clientId) {
+      const already = await Attachment.findOne({ spaceId: req.space!._id, clientId, deletedAt: null })
+      if (already) {
+        return res.json({ success: true, message: 'Attachment saved', attachment: serialize(already) })
+      }
+    }
+
+    if (!(await entityExistsInSpace(req.space!._id, entityType, entityId))) {
       return res.status(422).json({
         success: false,
-        message: 'That record does not exist in this space',
+        code: 'RECORD_NOT_SYNCED',
+        message: 'This record hasn’t reached the server yet — try again in a moment.',
       })
     }
 
@@ -110,6 +151,7 @@ export const uploadAttachment = async (
       spaceId: req.space!._id,
       entityType,
       entityId,
+      clientId,
       fileName: file.originalname.slice(0, 260),
       mimeType: file.mimetype,
       size: stored.bytes || file.size,
@@ -142,10 +184,7 @@ export const listAttachments = async (
     if (typeof req.query.entityType === 'string') {
       filter.entityType = req.query.entityType
     }
-    if (
-      typeof req.query.entityId === 'string' &&
-      mongoose.Types.ObjectId.isValid(req.query.entityId)
-    ) {
+    if (typeof req.query.entityId === 'string' && req.query.entityId.length <= 120) {
       filter.entityId = req.query.entityId
     }
 

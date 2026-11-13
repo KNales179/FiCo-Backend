@@ -12,6 +12,7 @@ import pushRoutes from './routes/pushRoutes.js'
 import feedbackRoutes from './routes/feedbackRoutes.js'
 import notificationRoutes from './routes/notificationRoutes.js'
 import appealRoutes from './routes/appealRoutes.js'
+import { syncLimitsDto } from './validation/syncLimits.js'
 
 const app = express()
 
@@ -46,8 +47,16 @@ app.use(
       callback(new Error('Not allowed by CORS'))
     },
     credentials: true,
+    // The app reads the server's clock from this, so edit times don't
+    // depend on a phone's clock being right.
+    exposedHeaders: ['X-Server-Time'],
   }),
 )
+
+app.use((_req, res, next) => {
+  res.setHeader('X-Server-Time', String(Date.now()))
+  next()
+})
 
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true, limit: '1mb' }))
@@ -79,6 +88,10 @@ app.use('/api/push', pushRoutes)
 app.use('/api/feedback', feedbackRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/appeals', appealRoutes)
+// The size limits synced records must fit (the app trims to these).
+app.get('/api/sync/limits', (_req, res) => {
+  res.json({ success: true, ...syncLimitsDto() })
+})
 
 app.use(notFound)
 app.use(errorHandler)

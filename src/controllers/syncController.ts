@@ -23,6 +23,51 @@ interface PushResult {
   status: PushResultStatus
   version?: number
   message?: string
+  /** For `stale` (or a partly-kept edit): the copy that won, so the device can take it. */
+  record?: Record<string, unknown>
+  /** Fields of this edit that lost to a newer change from someone else. */
+  lostFields?: string[]
+}
+
+// Never merged from an edit: identity and bookkeeping.
+const FIXED_FIELDS = new Set(['id', 'spaceId', 'createdAt', 'createdBy', 'syncStatus', 'version'])
+
+/**
+ * Apply only the fields an edit changed onto the server's copy. A field
+ * goes through unless someone else changed that same field more recently.
+ */
+const mergeFields = (
+  current: Record<string, unknown>,
+  times: Record<string, string>,
+  incoming: Record<string, unknown>,
+  changed: string[],
+): { merged: Record<string, unknown>; times: Record<string, string>; applied: string[]; lost: string[] } => {
+  const at = String(incoming.updatedAt ?? '')
+  const merged = { ...current }
+  const nextTimes = { ...times }
+  const applied: string[] = []
+  const lost: string[] = []
+  for (const field of changed) {
+    if (FIXED_FIELDS.has(field) || field === 'updatedAt') continue
+    const last = nextTimes[field] ?? ''
+    if (!last || at >= last) {
+      merged[field] = incoming[field]
+      nextTimes[field] = at
+      applied.push(field)
+    } else {
+      lost.push(field)
+    }
+  }
+  const currentAt = String(current.updatedAt ?? '')
+  merged.updatedAt = at > currentAt ? at : currentAt
+  return { merged, times: nextTimes, applied, lost }
+}
+
+const allFieldTimes = (payload: Record<string, unknown>): Record<string, string> => {
+  const at = String(payload.updatedAt ?? '')
+  const times: Record<string, string> = {}
+  for (const key of Object.keys(payload)) if (!FIXED_FIELDS.has(key)) times[key] = at
+  return times
 }
 
 const OPERATION_TO_ACTION: Record<string, ActionType> = {
@@ -274,6 +319,63 @@ export const pushSync = async (
             String(existing.updatedBy) !== userId &&
             existing.version >= (event.baseVersion ?? 0) + 1
 
+          // The device told us exactly which fields this edit changed:
+          // merge just those, so edits to different fields both survive.
+          if (!isDelete && event.changedFields?.length) {
+            const { merged, times, applied, lost } = mergeFields(
+              existing.payload,
+              existing.fieldUpdatedAt ?? {},
+              payload,
+              event.changedFields,
+            )
+            const winner = {
+              ...merged,
+              deletedAt: existing.deletedAt ? existing.deletedAt.toISOString() : (merged.deletedAt ?? null),
+            }
+            if (applied.length === 0) {
+              results.push({ eventId: event.id, status: 'stale', version: existing.version, record: winner, lostFields: lost })
+              continue
+            }
+            existing.payload = merged
+            existing.fieldUpdatedAt = times
+            existing.markModified('payload')
+            existing.markModified('fieldUpdatedAt')
+            existing.version += 1
+            existing.updatedBy = userId as unknown as typeof existing.updatedBy
+            if (merged.deletedAt) existing.deletedAt = existing.deletedAt ?? new Date()
+            await existing.save()
+            results.push({
+              eventId: event.id,
+              status: lost.length ? 'conflict-resolved' : 'applied',
+              version: existing.version,
+              ...(lost.length ? { record: winner, lostFields: lost } : {}),
+            })
+            if (lost.length) {
+              await logAction({
+                spaceId,
+                actorId: userId,
+                action: 'CONFLICT',
+                entityType: event.entityType,
+                entityId: event.entityId,
+                summary: `kept a newer change to ${lost.join(', ')} on ${event.entityType}`,
+                oldValue: payload,
+                newValue: merged,
+              })
+            }
+            if ((merged.visibility ?? 'SPACE') !== 'PRIVATE' && OPERATION_TO_ACTION[event.operation]) {
+              await logAction({
+                spaceId,
+                actorId: userId,
+                action: OPERATION_TO_ACTION[event.operation],
+                entityType: event.entityType,
+                entityId: event.entityId,
+                summary: summarize(event.entityType, event.operation, merged),
+              })
+            }
+            await notifyOtherMembers(spaceId, userId, event.entityType, event.operation, payload)
+            continue
+          }
+
           if (
             !isDelete &&
             incomingUpdatedAt &&
@@ -297,6 +399,10 @@ export const pushSync = async (
               eventId: event.id,
               status: 'stale',
               version: existing.version,
+              record: {
+                ...existing.payload,
+                deletedAt: existing.deletedAt ? existing.deletedAt.toISOString() : (existing.payload.deletedAt ?? null),
+              },
             })
             continue
           }
@@ -318,6 +424,10 @@ export const pushSync = async (
           existing.payload = isDelete
             ? { ...existing.payload, deletedAt: new Date().toISOString() }
             : payload
+          if (!isDelete) {
+            existing.fieldUpdatedAt = allFieldTimes(payload)
+            existing.markModified('fieldUpdatedAt')
+          }
           existing.version += 1
           existing.updatedBy = userId as unknown as typeof existing.updatedBy
           if (isDelete || payload.deletedAt) {
@@ -329,6 +439,22 @@ export const pushSync = async (
             status,
             version: existing.version,
           })
+        } else if (isDelete) {
+          // Deleting something the server never received (its create
+          // failed or never arrived). Keep only a tombstone — never a
+          // half-empty record — so other devices that do have it drop it.
+          const now = new Date()
+          await SyncRecord.create({
+            spaceId,
+            entityType: event.entityType,
+            clientId: event.entityId,
+            payload: { id: event.entityId, deletedAt: now.toISOString() },
+            version: event.clientVersion ?? 1,
+            updatedBy: userId,
+            deletedAt: now,
+          }).catch(() => undefined)
+          results.push({ eventId: event.id, status: 'applied' })
+          continue
         } else {
           try {
             const created = await SyncRecord.create({
@@ -336,6 +462,7 @@ export const pushSync = async (
               entityType: event.entityType,
               clientId: event.entityId,
               payload,
+              fieldUpdatedAt: allFieldTimes(payload),
               version: event.clientVersion ?? 1,
               updatedBy: userId,
               deletedAt: payload.deletedAt ? new Date() : null,
@@ -396,11 +523,17 @@ export const pushSync = async (
         // Something went wrong applying this one event — release the
         // claim above so a legitimate retry can actually re-attempt it,
         // rather than a failed mutation silently being treated as if it
-        // had succeeded.
+        // had succeeded. And keep going: one bad change used to fail the
+        // whole batch, so every change queued after it never synced.
         await ProcessedEvent.deleteOne({ eventId: event.id }).catch(
           () => undefined,
         )
-        throw eventError
+        console.error('[fico/api] sync event failed:', event.entityType, event.operation, eventError)
+        results.push({
+          eventId: event.id,
+          status: 'rejected',
+          message: 'The server couldn’t save this change. Tap “Try again”, or discard it.',
+        })
       }
     }
 
