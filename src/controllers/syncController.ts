@@ -112,7 +112,7 @@ const notifyOtherMembers = async (
       await Promise.all(
         others.map((id) =>
           sendPushToUserIfEnabled(id, 'shoppingUpdates', {
-            title: 'New shopping list',
+            title: 'New to-buy list',
             body: `"${title}" was just added`,
             tag: `shopping-list-${payload.id}`,
             url: '/shopping',

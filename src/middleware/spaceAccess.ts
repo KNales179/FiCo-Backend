@@ -59,7 +59,11 @@ export const requireSpaceMember =
       if (ROLE_RANK[membership.role] < ROLE_RANK[minRole]) {
         return res.status(403).json({
           success: false,
-          message: 'You do not have permission to do that in this space',
+          code: membership.role === 'VIEWER' ? 'VIEWER_READ_ONLY' : 'ROLE_TOO_LOW',
+          message:
+            membership.role === 'VIEWER'
+              ? 'You’re a viewer in this Finance — you can see everything, but not change it'
+              : 'You do not have permission to do that in this Finance',
         })
       }
 

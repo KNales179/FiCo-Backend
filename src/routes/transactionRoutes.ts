@@ -10,7 +10,7 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('MEMBER'), listTransactions)
+router.get('/', requireSpaceMember('VIEWER'), listTransactions)
 router.post('/', requireSpaceMember('MEMBER'), createTransaction)
 router.get(
   '/:transactionId',

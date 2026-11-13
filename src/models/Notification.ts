@@ -11,7 +11,7 @@ import mongoose, { Document, Schema } from 'mongoose'
  * - ADMIN_ACTION: an admin did something to their account (role change,
  *   restriction lifted, password reset…), with the reason given.
  */
-export type NotificationKind = 'FEEDBACK_DONE' | 'ADMIN_NOTICE' | 'ADMIN_ACTION'
+export type NotificationKind = 'FEEDBACK_DONE' | 'ADMIN_NOTICE' | 'ADMIN_ACTION' | 'FINANCE_ROLE' | 'BADGE'
 
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId
@@ -33,7 +33,7 @@ export interface INotification extends Document {
 const notificationSchema = new Schema<INotification>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    kind: { type: String, enum: ['FEEDBACK_DONE', 'ADMIN_NOTICE', 'ADMIN_ACTION'], required: true },
+    kind: { type: String, enum: ['FEEDBACK_DONE', 'ADMIN_NOTICE', 'ADMIN_ACTION', 'FINANCE_ROLE', 'BADGE'], required: true },
     title: { type: String, required: true, trim: true, maxlength: 120 },
     body: { type: String, required: true, trim: true, maxlength: 2000 },
     link: { type: String, default: null, maxlength: 200 },

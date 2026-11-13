@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express'
-import User from '../models/User.js'
+import User, { displayBadges } from '../models/User.js'
 import Session from '../models/Session.js'
 import { hashPassword, verifyPassword } from '../utils/password.js'
 import {
@@ -46,6 +46,7 @@ export const listUsers = async (
         totpEnabled: u.totpEnabled,
         emailVerified: u.emailVerified,
         avatarUrl: u.avatarUrl ?? null,
+        badges: displayBadges(u),
         restricted: Boolean(u.restriction && (!u.restriction.until || u.restriction.until.getTime() > Date.now())),
         createdAt: u.createdAt.toISOString(),
         isSelf: u.id === req.user?.id,

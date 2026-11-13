@@ -4,11 +4,12 @@ import { z } from 'zod'
 import Invitation from '../models/Invitation.js'
 import Membership from '../models/Membership.js'
 import Space, { ISpace } from '../models/Space.js'
-import User from '../models/User.js'
+import User, { displayBadges } from '../models/User.js'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
 import { seedDefaultCategories } from '../services/categoryService.js'
 import { logAction } from '../services/actionLogService.js'
+import { notifyUser } from '../services/notificationService.js'
 import {
   addMemberSchema,
   createSpaceSchema,
@@ -276,7 +277,7 @@ export const listMembers = async (
     const users = await User.find({
       _id: { $in: memberships.map((m) => m.userId) },
     })
-      .select('username displayName avatarUrl')
+      .select('username displayName avatarUrl badges role')
       .lean()
 
     const userById = new Map(users.map((u) => [String(u._id), u]))
@@ -288,6 +289,7 @@ export const listMembers = async (
         username: user?.username ?? null,
         displayName: user?.displayName ?? null,
         avatarUrl: user?.avatarUrl ?? null,
+        badges: user ? displayBadges(user) : [],
         role: m.role,
         joinedAt: m.createdAt,
       }
@@ -463,7 +465,8 @@ export const transferOwnership = async (
     const ownerMembership = req.membership!
 
     targetMembership.role = 'OWNER'
-    ownerMembership.role = 'MEMBER'
+    // The previous owner stays on as an admin.
+    ownerMembership.role = 'ADMIN'
     space.ownerId = new mongoose.Types.ObjectId(targetUserId)
 
     await Promise.all([
@@ -770,6 +773,72 @@ export const removeMember = async (
     })
 
     return res.json({ success: true, message: 'Member removed' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+const ROLE_WORD: Record<string, string> = { ADMIN: 'an admin', MEMBER: 'a member', VIEWER: 'a viewer' }
+
+/**
+ * PATCH /api/spaces/:spaceId/members/:userId/role — the owner makes someone
+ * an admin, a member, or a viewer. (Ownership itself moves only by
+ * transferring it.) The person is told, and it shows in Activity.
+ */
+export const setMemberRole = async (req: SpaceRequest, res: Response, next: NextFunction) => {
+  try {
+    const result = z.object({ role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']) }).safeParse(req.body)
+    if (!result.success) {
+      return res.status(400).json({ success: false, message: 'Pick Admin, Member or Viewer' })
+    }
+    const userId = String(req.params.userId)
+    if (userId === req.user!.id) {
+      return res.status(400).json({ success: false, message: 'You’re the owner — hand over ownership to change your own role' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(404).json({ success: false, message: 'Member not found' })
+    }
+    const membership = await Membership.findOne({
+      spaceId: req.space!._id,
+      userId: new mongoose.Types.ObjectId(userId),
+      status: 'ACTIVE',
+    })
+    if (!membership) return res.status(404).json({ success: false, message: 'Member not found' })
+    if (membership.role === 'OWNER') {
+      return res.status(400).json({ success: false, message: 'Transfer ownership instead' })
+    }
+    const role = result.data.role
+    if (membership.role === role) return res.json({ success: true, message: 'No change' })
+
+    membership.role = role
+    await membership.save()
+
+    const target = await User.findById(userId).select('username displayName')
+    const name = target?.displayName || target?.username || 'someone'
+    await logAction({
+      spaceId: req.space!._id,
+      actorId: req.user!.id,
+      action: 'ROLE_CHANGE',
+      entityType: 'membership',
+      entityId: userId,
+      summary: `made ${name} ${ROLE_WORD[role]}`,
+    })
+    await notifyUser({
+      userId,
+      kind: 'FINANCE_ROLE',
+      title: `You’re now ${ROLE_WORD[role]} in ${req.space!.name}`,
+      body:
+        role === 'ADMIN'
+          ? 'You can add and edit everything, and see the Activity — who changed what.'
+          : role === 'VIEWER'
+            ? 'You can see everything in this Finance, but can’t add or change anything.'
+            : 'You can add and edit records in this Finance.',
+      senderName: req.user!.displayName || req.user!.username,
+      senderId: req.user!.id,
+      popup: true,
+    })
+
+    return res.json({ success: true, message: `${name} is now ${ROLE_WORD[role]}` })
   } catch (error) {
     next(error)
   }

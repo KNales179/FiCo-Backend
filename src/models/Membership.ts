@@ -1,17 +1,22 @@
 import mongoose, { Document, Schema } from 'mongoose'
 
 /**
- * Fico has no view-only role. Anyone in a Finance is a full participant and
- * can add and manage everything in it; the owner additionally can remove
- * members, transfer ownership, and delete the Finance.
+ * Roles in a Finance:
+ * - OWNER  — everything, plus managing members (invite, remove, change
+ *            roles), transferring ownership and deleting the Finance.
+ * - ADMIN  — edits everything, and sees the Activity (who changed what).
+ * - MEMBER — adds and edits records.
+ * - VIEWER — sees everything, changes nothing.
  */
-export type MembershipRole = 'OWNER' | 'MEMBER'
+export type MembershipRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER'
 export type MembershipStatus = 'ACTIVE' | 'INVITED' | 'REVOKED'
 
 /** Higher number = more capable. Used for `requireSpaceMember(minRole)`. */
 export const ROLE_RANK: Record<MembershipRole, number> = {
+  VIEWER: 0,
   MEMBER: 1,
-  OWNER: 2,
+  ADMIN: 2,
+  OWNER: 3,
 }
 
 export interface IMembership extends Document {
@@ -41,7 +46,7 @@ const membershipSchema = new Schema<IMembership>(
 
     role: {
       type: String,
-      enum: ['OWNER', 'MEMBER'],
+      enum: ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'],
       required: true,
     },
 

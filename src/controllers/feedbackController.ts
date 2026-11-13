@@ -29,6 +29,8 @@ export const createFeedback = async (
       userId: req.user!.id,
       type: result.data.type,
       message: result.data.message,
+      page: result.data.page || null,
+      section: result.data.page && result.data.section ? result.data.section : null,
     })
 
     // Best effort — a stalled/misconfigured push setup must never block the
@@ -40,7 +42,7 @@ export const createFeedback = async (
             sendPushToUserIfEnabled(admin.id, 'feedbackReports', {
               title:
                 result.data.type === 'BUG' ? 'New bug report' : 'New suggestion',
-              body: `${req.user!.username}: ${result.data.message.slice(0, 120)}`,
+              body: `${req.user!.username}${result.data.page ? ` · ${result.data.page}${result.data.section ? ` › ${result.data.section}` : ''}` : ''}: ${result.data.message.slice(0, 120)}`,
               tag: `feedback-${feedback.id}`,
               url: '/admin/feedback',
             }),
@@ -84,6 +86,8 @@ export const listFeedback = async (
         type: row.type,
         message: row.message,
         status: row.status,
+        page: row.page ?? null,
+        section: row.section ?? null,
         createdAt: row.createdAt.toISOString(),
         // So the admin's own submitted feedback never lights up their own
         // "new suggestion" nav badge — see features/seen's isUnseen.

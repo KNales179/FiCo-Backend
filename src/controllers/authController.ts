@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { Request, Response, NextFunction } from 'express'
-import User from '../models/User.js'
+import User, { displayBadges } from '../models/User.js'
 import Session from '../models/Session.js'
 import TwoFactorChallenge from '../models/TwoFactorChallenge.js'
 import Membership from '../models/Membership.js'
@@ -101,6 +101,7 @@ const toPublicUser = (user: InstanceType<typeof User>) => ({
     ? { month: user.birthday.month, day: user.birthday.day, year: user.birthday.year ?? null }
     : null,
   paydays: user.paydays ?? [],
+  badges: displayBadges(user),
   role: user.role,
   totpEnabled: user.totpEnabled,
   emailVerified: user.emailVerified,
@@ -435,12 +436,20 @@ export const logout = async (
 export const getMe = async (
   req: AuthRequest,
   res: Response,
+  next: NextFunction,
 ) => {
-  return res.json({
-    success: true,
-    user: req.user,
-    session: req.session,
-  })
+  try {
+    // The full public profile (birthday, paydays, badges…) — not just the
+    // slim copy the auth check keeps on the request, which left those out.
+    const user = await User.findById(req.user!.id)
+    return res.json({
+      success: true,
+      user: user ? toPublicUser(user) : req.user,
+      session: req.session,
+    })
+  } catch (error) {
+    next(error)
+  }
 }
 
 export const updateMe = async (
@@ -539,12 +548,7 @@ export const updateMe = async (
     return res.json({
       success: true,
       message: 'Profile updated successfully',
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName ?? null,
-      },
+      user: toPublicUser(user),
     })
   } catch (error) {
     next(error)

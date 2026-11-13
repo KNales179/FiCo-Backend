@@ -144,7 +144,7 @@ export const createShoppingList = async (
 
     return res.status(201).json({
       success: true,
-      message: 'Shopping list created',
+      message: 'To-buy list created',
       list: { ...serializeList(list), totals: computeListTotals(list, []) },
       items: [],
     })
@@ -386,7 +386,7 @@ export const completeShoppingList = async (
 
     return res.json({
       success: true,
-      message: `Shopping completed — ${createdCount} expense${
+      message: `To-buy list finished — ${createdCount} expense${
         createdCount === 1 ? '' : 's'
       } recorded`,
       list: {

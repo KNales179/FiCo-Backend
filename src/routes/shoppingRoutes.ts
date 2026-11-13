@@ -14,7 +14,7 @@ import {
 
 const router = Router({ mergeParams: true })
 
-const read = requireSpaceMember('MEMBER')
+const read = requireSpaceMember('VIEWER')
 const write = requireSpaceMember('MEMBER')
 
 router.get('/', read, listShoppingLists)

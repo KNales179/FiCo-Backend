@@ -14,6 +14,7 @@ import {
   restrictUser,
   unrestrictUser,
   deleteUser,
+  setUserBadge,
 } from '../controllers/adminUserController.js'
 import { listAppeals, getAppeal, decideAppeal } from '../controllers/appealController.js'
 import { authenticate, requireAdmin } from '../middleware/authMiddleware.js'
@@ -33,6 +34,7 @@ router.post('/users/:userId/sign-out', adminActionRateLimiter, signOutUser)
 router.post('/users/:userId/restrict', adminActionRateLimiter, restrictUser)
 router.post('/users/:userId/unrestrict', adminActionRateLimiter, unrestrictUser)
 router.delete('/users/:userId', adminActionRateLimiter, deleteUser)
+router.post('/users/:userId/badges', adminActionRateLimiter, setUserBadge)
 router.post('/users/:userId/password', adminActionRateLimiter, setUserPassword)
 router.post('/users/:userId/role', adminActionRateLimiter, setUserRole)
 router.post('/users/:userId/2fa/reset', adminActionRateLimiter, resetUserTwoFactor)

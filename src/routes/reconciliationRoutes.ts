@@ -8,7 +8,7 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('MEMBER'), listReconciliations)
+router.get('/', requireSpaceMember('VIEWER'), listReconciliations)
 router.post('/', requireSpaceMember('MEMBER'), createReconciliation)
 router.patch(
   '/:id',

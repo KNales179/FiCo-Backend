@@ -1,12 +1,13 @@
 import { Response, NextFunction } from 'express'
 import mongoose from 'mongoose'
-import User from '../models/User.js'
+import User, { displayBadges } from '../models/User.js'
 import Session from '../models/Session.js'
 import Membership from '../models/Membership.js'
 import Space from '../models/Space.js'
 import Feedback from '../models/Feedback.js'
 import AdminAuditLog from '../models/AdminAuditLog.js'
 import { verifyPassword } from '../utils/password.js'
+import { z } from 'zod'
 import { AuthRequest } from '../middleware/authMiddleware.js'
 import { logAdminAudit } from '../services/adminAuditService.js'
 import { notifyUser, signOutEverywhere } from '../services/notificationService.js'
@@ -83,6 +84,15 @@ export const getUserProfile = async (req: AuthRequest, res: Response, next: Next
 
     const restriction = restrictionActive(target.restriction) ? target.restriction : null
 
+    const memberships = await Membership.find({ userId: target.id, status: 'ACTIVE' }).lean()
+    const spaces = await Space.find({ _id: { $in: memberships.map((m) => m.spaceId) }, deletedAt: null, type: 'FAMILY' })
+      .select('name')
+      .lean()
+    const spaceName = new Map(spaces.map((s) => [String(s._id), s.name]))
+    const sharedRoles = memberships
+      .filter((m) => spaceName.has(String(m.spaceId)))
+      .map((m) => ({ spaceId: String(m.spaceId), name: spaceName.get(String(m.spaceId))!, role: m.role }))
+
     return res.json({
       success: true,
       user: {
@@ -105,6 +115,9 @@ export const getUserProfile = async (req: AuthRequest, res: Response, next: Next
           ? { reason: target.deletedByAdmin.reason, at: target.deletedByAdmin.at.toISOString() }
           : null,
         stats: { finances, ownedFinances, feedbackOpen, feedbackTotal },
+        badges: displayBadges(target),
+        /** The shared Finances they're in, and their role in each. */
+        financeRoles: sharedRoles,
       },
       sessions: sessions.map((s) => ({
         id: s.id,
@@ -298,6 +311,68 @@ export const deleteUser = async (req: AuthRequest, res: Response, next: NextFunc
       detail: `${target.username} — ${result.data.reason}`,
     })
     return res.json({ success: true, message: `${target.username}'s account was deleted` })
+  } catch (error) {
+    next(error)
+  }
+}
+
+const BADGE_LABEL: Record<string, string> = { FICO_OWNER: 'Fico Owner', BETA_TESTER: 'Beta tester' }
+
+/**
+ * POST /api/admin/users/:userId/badges { badge, on } — give or take away a
+ * badge. Beta tester: any admin. Fico Owner: only someone who already has
+ * it (or, while nobody does yet, any admin — so the first one can be given).
+ * "Fico Admin" isn't granted here: it comes with the admin role.
+ */
+export const setUserBadge = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const parsed = z.object({ badge: z.enum(['FICO_OWNER', 'BETA_TESTER']), on: z.boolean() }).safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ success: false, message: 'Pick a badge' })
+    const { badge, on } = parsed.data
+
+    if (badge === 'FICO_OWNER') {
+      const me = await User.findById(req.user!.id).select('badges')
+      const anyOwner = await User.exists({ badges: 'FICO_OWNER' })
+      if (anyOwner && !me?.badges?.includes('FICO_OWNER')) {
+        return res.status(403).json({ success: false, message: 'Only a Fico Owner can give or remove the Fico Owner badge' })
+      }
+    }
+
+    const target = await loadTarget(req, res)
+    if (!target) return
+    const has = target.badges.includes(badge)
+    if (has === on) return res.json({ success: true, message: 'No change', badges: displayBadges(target) })
+
+    target.badges = on ? [...target.badges, badge] : target.badges.filter((b) => b !== badge)
+    await target.save()
+
+    if (on) {
+      await notifyUser({
+        userId: target.id,
+        kind: 'BADGE',
+        title: `You’ve got a new badge: ${BADGE_LABEL[badge]}`,
+        body:
+          badge === 'BETA_TESTER'
+            ? 'Thank you for helping test Fico! Your Beta tester badge now shows on your profile.'
+            : 'Your Fico Owner badge now shows on your profile.',
+        senderName: 'Fico Admin Team',
+        senderId: req.user!.id,
+        popup: true,
+        link: '/account',
+      })
+    }
+    await logAdminAudit({
+      actorId: req.user!.id,
+      action: 'SET_BADGE',
+      targetUserId: target.id,
+      result: 'SUCCESS',
+      detail: `${on ? 'gave' : 'removed'} ${BADGE_LABEL[badge]}`,
+    })
+    return res.json({
+      success: true,
+      message: `${on ? 'Gave' : 'Removed'} ${BADGE_LABEL[badge]} ${on ? 'to' : 'from'} ${target.username}`,
+      badges: displayBadges(target),
+    })
   } catch (error) {
     next(error)
   }

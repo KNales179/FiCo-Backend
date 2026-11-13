@@ -2,6 +2,19 @@ import mongoose, { Document, Schema } from 'mongoose'
 
 export type UserRole = 'ADMIN' | 'USER'
 
+/** Badges the Fico team can give (more planned: VIP, VIP+, Business…). */
+export type StoredBadge = 'FICO_OWNER' | 'BETA_TESTER'
+export type Badge = StoredBadge | 'FICO_ADMIN'
+
+/** What a person's profile shows: their granted badges, plus Fico Admin for admins. */
+export const displayBadges = (user: { badges?: string[] | null; role?: string }): Badge[] => {
+  const out: Badge[] = []
+  if (user.badges?.includes('FICO_OWNER')) out.push('FICO_OWNER')
+  if (user.role === 'ADMIN') out.push('FICO_ADMIN')
+  if (user.badges?.includes('BETA_TESTER')) out.push('BETA_TESTER')
+  return out
+}
+
 export interface IUser extends Document {
   username: string
   email: string
@@ -16,6 +29,9 @@ export interface IUser extends Document {
    *  month), at most two — e.g. [15, 31] for the common kinsenas pay. */
   paydays: number[]
   status: 'ACTIVE' | 'DISABLED'
+  /** Badges granted by the Fico team (shown on the person's profile).
+   *  "Fico Admin" isn't stored — it shows for anyone with the admin role. */
+  badges: StoredBadge[]
   /** Set by an admin: can't sign in until `until` (null = until lifted). */
   restriction?: {
     reason: string
@@ -133,6 +149,11 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ['ACTIVE', 'DISABLED'],
       default: 'ACTIVE',
+    },
+
+    badges: {
+      type: [{ type: String, enum: ['FICO_OWNER', 'BETA_TESTER'] }],
+      default: [],
     },
 
     restriction: {

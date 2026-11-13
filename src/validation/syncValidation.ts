@@ -13,6 +13,7 @@ const minorInt = z.number().int().min(-1_000_000_000_00).max(1_000_000_000_00)
 const nonNegInt = z.number().int().min(0).max(1_000_000_000_00)
 const iso = z.string().min(1)
 const visibility = z.enum(['SPACE', 'PRIVATE']).optional()
+const usage = z.enum(['ELECTRICITY', 'WATER', 'LPG', 'FUEL']).nullable().optional()
 const base = {
   id,
   createdAt: iso,
@@ -121,6 +122,8 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     active: z.boolean(),
     visibility,
     tracksElectricity: z.boolean(),
+    // What usage the bill tracks: kWh, m³, kg (LPG) or litres (fuel).
+    usageKind: usage,
     categoryId: z.string().nullable().optional(),
     categoryName: z.string().nullable().optional(),
     createdBy: z.string().optional(),
@@ -143,6 +146,7 @@ const schemas: Record<string, z.ZodObject<z.ZodRawShape>> = {
     billPaymentId: id,
     billingPeriod: z.string().min(1),
     amountMinor: nonNegInt,
+    usageKind: usage,
     consumptionKwh: z.number().min(0).nullable().optional(),
     energyChargeMinor: z.number().int().nullable().optional(),
     transmissionMinor: z.number().int().nullable().optional(),

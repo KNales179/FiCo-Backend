@@ -22,6 +22,7 @@ export type AdminAuditAction =
   | 'UNRESTRICT'
   | 'DELETE_USER'
   | 'APPEAL_DECISION'
+  | 'SET_BADGE'
   | 'STEP_UP_FAILED'
 
 export interface IAdminAuditLog extends Document {

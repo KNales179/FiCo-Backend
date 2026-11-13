@@ -9,6 +9,6 @@ router.use(syncRateLimiter)
 
 // Any active member may sync; per-record visibility is enforced inside.
 router.post('/push', requireSpaceMember('MEMBER'), pushSync)
-router.get('/pull', requireSpaceMember('MEMBER'), pullSync)
+router.get('/pull', requireSpaceMember('VIEWER'), pullSync)
 
 export default router

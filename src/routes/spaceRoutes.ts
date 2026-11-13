@@ -27,6 +27,7 @@ import {
   listMembers,
   listMySpaces,
   removeMember,
+  setMemberRole,
   revokeInvitation,
   transferOwnership,
   updateSpace,
@@ -39,20 +40,25 @@ router.use(authenticate)
 router.get('/', listMySpaces)
 router.post('/', createSpace)
 
-router.get('/:spaceId', requireSpaceMember('MEMBER'), getSpace)
+router.get('/:spaceId', requireSpaceMember('VIEWER'), getSpace)
 router.patch('/:spaceId', requireSpaceMember('OWNER'), updateSpace)
 router.delete('/:spaceId', requireSpaceMember('OWNER'), deleteSpace)
 
 router.post(
   '/:spaceId/leave',
-  requireSpaceMember('MEMBER'),
+  requireSpaceMember('VIEWER'),
   leaveSpace,
 )
 
 router.get(
   '/:spaceId/members',
-  requireSpaceMember('MEMBER'),
+  requireSpaceMember('VIEWER'),
   listMembers,
+)
+router.patch(
+  '/:spaceId/members/:userId/role',
+  requireSpaceMember('OWNER'),
+  setMemberRole,
 )
 router.post(
   '/:spaceId/members',

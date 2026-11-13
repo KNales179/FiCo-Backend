@@ -10,6 +10,9 @@ export interface IFeedback extends Document {
   type: FeedbackType
   message: string
   status: FeedbackStatus
+  /** Which page / section of the app it's about (optional tags). */
+  page?: string | null
+  section?: string | null
   /** When the sender was told it's done — so re-resolving never notifies twice. */
   notifiedAt?: Date | null
   createdAt: Date
@@ -42,6 +45,8 @@ const feedbackSchema = new Schema<IFeedback>(
       default: 'OPEN',
     },
     notifiedAt: { type: Date, default: null },
+    page: { type: String, default: null, maxlength: 60 },
+    section: { type: String, default: null, maxlength: 80 },
   },
   { timestamps: true },
 )

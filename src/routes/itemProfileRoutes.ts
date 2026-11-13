@@ -9,8 +9,8 @@ import {
 
 const router = Router({ mergeParams: true })
 
-router.get('/', requireSpaceMember('MEMBER'), listItemProfiles)
-router.get('/suggest', requireSpaceMember('MEMBER'), suggestItem)
+router.get('/', requireSpaceMember('VIEWER'), listItemProfiles)
+router.get('/suggest', requireSpaceMember('VIEWER'), suggestItem)
 router.get(
   '/:profileId/prices',
   requireSpaceMember('MEMBER'),
