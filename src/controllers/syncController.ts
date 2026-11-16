@@ -3,7 +3,7 @@ import { NextFunction, Response } from 'express'
 import SyncRecord, { ProcessedEvent } from '../models/SyncRecord.js'
 import Membership from '../models/Membership.js'
 import { SpaceRequest } from '../middleware/spaceAccess.js'
-import { logAction } from '../services/actionLogService.js'
+import { fieldChanges, logAction } from '../services/actionLogService.js'
 import type { ActionType } from '../models/ActionLog.js'
 import { sendPushToUserIfEnabled } from '../utils/push.js'
 import {
@@ -308,6 +308,8 @@ export const pushSync = async (
         })
 
         let status: PushResultStatus = 'applied'
+        // The record as it was, for "what changed" in Activity.
+        const before = existing ? { ...existing.payload } : null
 
         if (existing) {
           const incomingUpdatedAt = String(payload.updatedAt ?? '')
@@ -333,6 +335,19 @@ export const pushSync = async (
               deletedAt: existing.deletedAt ? existing.deletedAt.toISOString() : (merged.deletedAt ?? null),
             }
             if (applied.length === 0) {
+              // The whole edit lost to newer changes — still worth a line in Activity.
+              if (lost.length && (existing.payload.visibility ?? 'SPACE') !== 'PRIVATE') {
+                await logAction({
+                  spaceId,
+                  actorId: userId,
+                  action: 'CONFLICT',
+                  entityType: event.entityType,
+                  entityId: event.entityId,
+                  summary: `discarded an older edit to ${lost.join(', ')} on ${event.entityType} (a newer change already won)`,
+                  oldValue: payload,
+                  newValue: existing.payload,
+                })
+              }
               results.push({ eventId: event.id, status: 'stale', version: existing.version, record: winner, lostFields: lost })
               continue
             }
@@ -350,7 +365,8 @@ export const pushSync = async (
               version: existing.version,
               ...(lost.length ? { record: winner, lostFields: lost } : {}),
             })
-            if (lost.length) {
+            // Private records never appear in Activity, conflicts included.
+            if (lost.length && (merged.visibility ?? 'SPACE') !== 'PRIVATE') {
               await logAction({
                 spaceId,
                 actorId: userId,
@@ -370,6 +386,7 @@ export const pushSync = async (
                 entityType: event.entityType,
                 entityId: event.entityId,
                 summary: summarize(event.entityType, event.operation, merged),
+                ...(fieldChanges(before, merged, applied) ?? {}),
               })
             }
             await notifyOtherMembers(spaceId, userId, event.entityType, event.operation, payload)
@@ -383,7 +400,7 @@ export const pushSync = async (
           ) {
             // Our copy is newer — the client's edit was based on an older
             // version and loses under last-write-wins. Keep the history.
-            if (changedByAnother) {
+            if (changedByAnother && (existing.payload.visibility ?? 'SPACE') !== 'PRIVATE') {
               await logAction({
                 spaceId,
                 actorId: userId,
@@ -409,16 +426,18 @@ export const pushSync = async (
 
           if (changedByAnother && !isDelete) {
             status = 'conflict-resolved'
-            await logAction({
-              spaceId,
-              actorId: userId,
-              action: 'CONFLICT',
-              entityType: event.entityType,
-              entityId: event.entityId,
-              summary: `resolved a conflicting edit to ${event.entityType} (kept the newer change)`,
-              oldValue: existing.payload,
-              newValue: payload,
-            })
+            if ((payload.visibility ?? 'SPACE') !== 'PRIVATE' && (existing.payload.visibility ?? 'SPACE') !== 'PRIVATE') {
+              await logAction({
+                spaceId,
+                actorId: userId,
+                action: 'CONFLICT',
+                entityType: event.entityType,
+                entityId: event.entityId,
+                summary: `resolved a conflicting edit to ${event.entityType} (kept the newer change)`,
+                oldValue: existing.payload,
+                newValue: payload,
+              })
+            }
           }
 
           existing.payload = isDelete
@@ -506,6 +525,8 @@ export const pushSync = async (
             entityType: event.entityType,
             entityId: event.entityId,
             summary: summarize(event.entityType, event.operation, payload),
+            // Edits (not adds or deletes) keep what changed.
+            ...(before && !isDelete && event.operation !== 'CREATE' ? (fieldChanges(before, payload) ?? {}) : {}),
           })
         }
 
