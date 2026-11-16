@@ -311,6 +311,15 @@ export const pushSync = async (
         // The record as it was, for "what changed" in Activity.
         const before = existing ? { ...existing.payload } : null
 
+        // Adding something that's already here (a default category another
+        // device seeded first, with the same fixed id): keep what's there,
+        // quietly — not a conflict, and never overwrite edits (a renamed
+        // default stays renamed). The device's next pull brings this copy.
+        if (existing && event.operation === 'CREATE' && !existing.deletedAt) {
+          results.push({ eventId: event.id, status: 'duplicate', version: existing.version })
+          continue
+        }
+
         if (existing) {
           const incomingUpdatedAt = String(payload.updatedAt ?? '')
           const currentUpdatedAt =
@@ -514,9 +523,12 @@ export const pushSync = async (
           }
         }
 
-        // Activity trail for shared records (Architecture §26).
+        // Activity trail for shared records (Architecture §26). A delete
+        // only carries the id, so its name and privacy come from the record
+        // as it was ("removed category "Food"", never a Private one).
+        const described = isDelete && before ? before : payload
         const isShared =
-          (payload.visibility ?? 'SPACE') !== 'PRIVATE'
+          (described.visibility ?? 'SPACE') !== 'PRIVATE'
         if (isShared && OPERATION_TO_ACTION[event.operation]) {
           await logAction({
             spaceId,
@@ -524,7 +536,7 @@ export const pushSync = async (
             action: OPERATION_TO_ACTION[event.operation],
             entityType: event.entityType,
             entityId: event.entityId,
-            summary: summarize(event.entityType, event.operation, payload),
+            summary: summarize(event.entityType, event.operation, described),
             // Edits (not adds or deletes) keep what changed.
             ...(before && !isDelete && event.operation !== 'CREATE' ? (fieldChanges(before, payload) ?? {}) : {}),
           })
