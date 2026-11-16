@@ -37,6 +37,13 @@ export const registerSchema = z.object({
     message: 'You must agree to the Terms & Conditions',
   }),
 
+  // Fico is invite-only for now: a one-time code from a Fico admin.
+  inviteCode: z
+    .string({ message: 'Enter your invite code' })
+    .trim()
+    .min(1, 'Enter your invite code')
+    .max(40, 'That doesn’t look like an invite code'),
+
   deviceId: deviceIdSchema,
 })
 
@@ -176,6 +183,8 @@ export const googleAuthSchema = z.object({
   // Shown beside the Google button ("By continuing you agree to…") — only
   // needed when this creates a brand-new account.
   termsAccepted: z.boolean().optional(),
+  // Only needed when this creates a brand-new account (Fico is invite-only).
+  inviteCode: z.string().trim().max(40).optional(),
   deviceId: deviceIdSchema,
 })
 

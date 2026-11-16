@@ -23,6 +23,8 @@ export type AdminAuditAction =
   | 'DELETE_USER'
   | 'APPEAL_DECISION'
   | 'SET_BADGE'
+  | 'CREATE_INVITE_CODE'
+  | 'REVOKE_INVITE_CODE'
   | 'STEP_UP_FAILED'
 
 export interface IAdminAuditLog extends Document {

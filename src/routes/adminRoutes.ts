@@ -17,6 +17,7 @@ import {
   setUserBadge,
 } from '../controllers/adminUserController.js'
 import { listAppeals, getAppeal, decideAppeal } from '../controllers/appealController.js'
+import { createInviteCodes, listInviteCodes, revokeInviteCode } from '../controllers/inviteCodeController.js'
 import { authenticate, requireAdmin } from '../middleware/authMiddleware.js'
 import { adminActionRateLimiter } from '../middleware/rateLimiter.js'
 
@@ -24,6 +25,9 @@ const router = Router()
 
 router.use(authenticate, requireAdmin)
 
+router.get('/invite-codes', listInviteCodes)
+router.post('/invite-codes', adminActionRateLimiter, createInviteCodes)
+router.delete('/invite-codes/:codeId', adminActionRateLimiter, revokeInviteCode)
 router.get('/appeals', listAppeals)
 router.get('/appeals/:appealId', getAppeal)
 router.post('/appeals/:appealId/decide', adminActionRateLimiter, decideAppeal)

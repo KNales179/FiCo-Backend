@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { Request, Response, NextFunction } from 'express'
 import User, { displayBadges } from '../models/User.js'
+import { claimInvite, findUsableInvite, inviteProblem, INVITE_REQUIRED_MESSAGE } from '../services/inviteCodeService.js'
 import Session from '../models/Session.js'
 import TwoFactorChallenge from '../models/TwoFactorChallenge.js'
 import Membership from '../models/Membership.js'
@@ -146,7 +147,7 @@ export const register = async (
       })
     }
 
-    const { username, email, password, deviceId } = result.data
+    const { username, email, password, deviceId, inviteCode } = result.data
     // registerSchema requires this to be the literal `true` — reaching here
     // means it was actually agreed to, not just present.
 
@@ -172,6 +173,18 @@ export const register = async (
       })
     }
 
+    // Invite-only: an unused code from a Fico admin, or no account.
+    const invite = await findUsableInvite(inviteCode)
+    if (!invite) {
+      const problem = await inviteProblem(inviteCode)
+      return res.status(403).json({
+        success: false,
+        code: 'INVITE_REQUIRED',
+        message: problem,
+        errors: { inviteCode: [problem] },
+      })
+    }
+
     const passwordHash = await hashPassword(password)
 
     const user = await User.create({
@@ -180,7 +193,20 @@ export const register = async (
       passwordHash,
       status: 'ACTIVE',
       termsAcceptedAt: new Date(),
+      // Everyone joining with a code is helping test Fico.
+      badges: ['BETA_TESTER'],
     })
+
+    if (!(await claimInvite(invite, user.id))) {
+      // Someone used the same code a moment earlier.
+      await User.deleteOne({ _id: user._id })
+      return res.status(403).json({
+        success: false,
+        code: 'INVITE_REQUIRED',
+        message: 'That invite code was just used — ask for a new one',
+        errors: { inviteCode: ['That invite code was just used — ask for a new one'] },
+      })
+    }
 
     await createPersonalSpace(user.id)
     await consumePendingInvitations(user.id, normalizedEmail)
@@ -1027,7 +1053,7 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
     if (!result.success) {
       return res.status(400).json({ success: false, message: 'Invalid Google sign-in request' })
     }
-    const { credential, termsAccepted, deviceId } = result.data
+    const { credential, termsAccepted, deviceId, inviteCode } = result.data
 
     let payload
     try {
@@ -1066,7 +1092,19 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
           message: 'Please agree to the Terms & Conditions and Privacy Policy to create an account',
         })
       }
+      // Invite-only: a brand-new account needs an unused code.
+      const invite = await findUsableInvite(inviteCode)
+      if (!invite) {
+        return res.status(403).json({
+          success: false,
+          code: 'INVITE_REQUIRED',
+          message: inviteCode
+            ? await inviteProblem(inviteCode)
+            : `${INVITE_REQUIRED_MESSAGE} Enter your code on the Create account page, then continue with Google.`,
+        })
+      }
       user = await User.create({
+        badges: ['BETA_TESTER'],
         username: await usernameFromGoogle(payload.given_name || payload.name, email),
         email,
         // A Google-only account has no password; this random hash can't be
@@ -1078,6 +1116,14 @@ export const googleAuth = async (req: Request, res: Response, next: NextFunction
         status: 'ACTIVE',
         termsAcceptedAt: new Date(),
       })
+      if (!(await claimInvite(invite, user.id))) {
+        await User.deleteOne({ _id: user._id })
+        return res.status(403).json({
+          success: false,
+          code: 'INVITE_REQUIRED',
+          message: 'That invite code was just used — ask for a new one',
+        })
+      }
       await createPersonalSpace(user.id)
       await consumePendingInvitations(user.id, email)
     }
