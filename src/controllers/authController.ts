@@ -6,6 +6,12 @@ import Session from '../models/Session.js'
 import TwoFactorChallenge from '../models/TwoFactorChallenge.js'
 import Membership from '../models/Membership.js'
 import Space from '../models/Space.js'
+import SyncRecord from '../models/SyncRecord.js'
+import ActionLog from '../models/ActionLog.js'
+import Invitation from '../models/Invitation.js'
+import Attachment from '../models/Attachment.js'
+import Notification from '../models/Notification.js'
+import PushSubscription from '../models/PushSubscription.js'
 import {
   getDummyHash,
   hashPassword,
@@ -18,7 +24,7 @@ import {
 } from '../utils/session.js'
 import { verifyTotp } from '../utils/totp.js'
 import { OAuth2Client } from 'google-auth-library'
-import { deleteAvatar, uploadAvatar } from '../services/attachmentStorage.js'
+import { deleteAvatar, deleteReceipt, isStorageConfigured, uploadAvatar } from '../services/attachmentStorage.js'
 import { generateToken, hashToken } from '../utils/token.js'
 import {
   sendPasswordResetEmail,
@@ -717,26 +723,76 @@ export const deleteMe = async (
       })
     }
 
-    await Session.updateMany(
-      { userId: user._id },
-      {
-        $set: {
-          revokedAt: new Date(),
-        },
-      },
-    )
+    // A shared Finance you own that other people still use isn't yours
+    // alone to delete — hand it over first, so nobody loses it.
+    const owned = await Space.find({ ownerId: user._id, deletedAt: null })
+    const sharedWithOthers: string[] = []
+    for (const space of owned) {
+      const others = await Membership.countDocuments({
+        spaceId: space._id,
+        status: 'ACTIVE',
+        userId: { $ne: user._id },
+      })
+      if (others > 0) sharedWithOthers.push(space.name)
+    }
+    if (sharedWithOthers.length) {
+      return res.status(409).json({
+        success: false,
+        code: 'OWNS_SHARED_FINANCES',
+        spaces: sharedWithOthers,
+        message: `You own shared Finances other people still use: ${sharedWithOthers.join(', ')}. Hand each one over to someone (Members → Make owner) or remove its members first.`,
+      })
+    }
 
-    // Revoke memberships and soft-delete any spaces this user owns.
+    // Signed out everywhere, out of every Finance.
+    await Session.updateMany({ userId: user._id }, { $set: { revokedAt: new Date() } })
     await Membership.updateMany(
       { userId: user._id, status: 'ACTIVE' },
       { $set: { status: 'REVOKED' } },
     )
-    await Space.updateMany(
-      { ownerId: user._id, deletedAt: null },
-      { $set: { deletedAt: new Date() } },
-    )
 
-    // Soft-disable the account for now.
+    // Finances only they used (their personal one, or a shared one nobody
+    // else is in): erased — the records, their history, receipts.
+    for (const space of owned) {
+      const receipts = await Attachment.find({ spaceId: space._id })
+      if (isStorageConfigured()) {
+        for (const r of receipts) await deleteReceipt(r.storageKey, r.resourceType).catch(() => undefined)
+      }
+      await Attachment.deleteMany({ spaceId: space._id })
+      await SyncRecord.deleteMany({ spaceId: space._id })
+      await ActionLog.deleteMany({ spaceId: space._id })
+      await Invitation.deleteMany({ spaceId: space._id })
+      await Membership.deleteMany({ spaceId: space._id })
+      space.deletedAt = new Date()
+      await space.save()
+    }
+
+    // Their own messages and push devices go too.
+    await Notification.deleteMany({ userId: user._id })
+    await PushSubscription.deleteMany({ userId: user._id })
+    await TwoFactorChallenge.deleteMany({ userId: user._id })
+
+    // The account itself: everything that identifies the person is erased,
+    // so the email can be used again. Records they added to other people's
+    // shared Finances stay there, now from "a deleted account".
+    if (user.avatarPublicId && isStorageConfigured()) await deleteAvatar(user.avatarPublicId).catch(() => undefined)
+    const tag = crypto.randomBytes(6).toString('hex')
+    user.username = `deleted_${tag}`
+    user.email = `deleted+${tag}@deleted.invalid`
+    user.displayName = undefined
+    user.passwordHash = await hashPassword(crypto.randomBytes(32).toString('hex'))
+    user.googleId = undefined
+    user.birthday = null
+    user.paydays = []
+    user.badges = []
+    user.avatarUrl = null
+    user.avatarPublicId = null
+    user.totpSecret = null
+    user.totpEnabled = false
+    user.totpBackupCodeHashes = []
+    user.emailVerified = false
+    user.emailVerificationTokenHash = null
+    user.passwordResetTokenHash = null
     user.status = 'DISABLED'
     await user.save()
 
