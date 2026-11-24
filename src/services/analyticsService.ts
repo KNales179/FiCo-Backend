@@ -146,6 +146,9 @@ export const computeSpaceAnalytics = async (
       monthMap.get(mk) ?? { month: mk, incomeMinor: 0, expenseMinor: 0 }
 
     if (txn.type === 'INCOME') {
+      // A new account's starting balance is saved as income so the balance
+      // adds up, but nobody earned it that month — leave it out of income.
+      if (txn.sourceType === 'OPENING_BALANCE') continue
       incomeMinor += amount
       month.incomeMinor += amount
     } else if (txn.type === 'EXPENSE') {
